@@ -7,14 +7,15 @@
   "message_length":  100,
 
   "away_only":         false,
-  "highlight":         "",
-  "last_notification": 300,
-  "nick_blacklist":    "",
-  "network_blacklist": "",
-  "context":           "*",
+  "cooldown":          300,
+  "nick_blacklist":    ["*bot*", "ChanServ", "NickServ"],
+  "network_blacklist": [],
+  "highlight_words":   [],
 
-  "channel_conditions": "all",
-  "query_conditions":   "all",
+  "rules": [
+    { "highlight": true },
+    { "pm": true }
+  ],
 
   "debug": false
 }
