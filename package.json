@@ -1,0 +1,14 @@
+{
+  "name": "thelounge-plugin-apprise-push",
+  "version": "1.0.0",
+  "description": "TheLounge server plugin: push notifications via Apprise HTTP API",
+  "main": "index.js",
+  "engines": {
+    "node": ">=14"
+  },
+  "thelounge": {
+    "supports": ">=4.0.0"
+  },
+  "keywords": ["thelounge", "plugin", "apprise", "notifications", "push"],
+  "license": "MIT"
+}

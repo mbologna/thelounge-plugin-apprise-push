@@ -1,0 +1,20 @@
+{
+  "apprise_api_url": "http://localhost:8000",
+  "apprise_urls": ["tgram://bottoken/chatid"],
+
+  "message_title":   "{title}",
+  "message_content": "{context}: [{nick}] {message}",
+  "message_length":  100,
+
+  "away_only":         false,
+  "highlight":         "",
+  "last_notification": 300,
+  "nick_blacklist":    "",
+  "network_blacklist": "",
+  "context":           "*",
+
+  "channel_conditions": "all",
+  "query_conditions":   "all",
+
+  "debug": false
+}
