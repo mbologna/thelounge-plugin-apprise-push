@@ -14,9 +14,11 @@ const DEFAULTS = {
   apprise_urls:    [],   // e.g. ["tgram://bottoken/chatid"]
 
   // Notification text — supports keyword expansion (see README)
-  message_title:   "{title}",
-  message_content: "{context}: [{nick}] {message}",
-  message_length:  100,   // 0 = no truncation
+  message_title:     "{title}",          // fallback if pm/chan title not set
+  message_title_pm:  "PM [{network}]",
+  message_title_chan: "Mention [{network}] {context}",
+  message_content:   "{nick}: {message}",
+  message_length:    100,   // 0 = no truncation
 
   // Global pre-filters (applied before any rule)
   away_only:         false,  // only notify when no browser tabs are open
@@ -245,7 +247,8 @@ function makeHandler(cfg, lastNotified) {
       message:  shortMsg,
     };
 
-    const title = expand(cfg.message_title,   vars);
+    const titleTemplate = isQuery ? cfg.message_title_pm : cfg.message_title_chan;
+    const title = expand(titleTemplate || cfg.message_title, vars);
     const body  = expand(cfg.message_content, vars);
 
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
