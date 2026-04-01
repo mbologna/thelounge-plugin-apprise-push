@@ -3,7 +3,7 @@
   "apprise_urls": ["tgram://bottoken/chatid"],
 
   "message_title":   "{title}",
-  "message_content": "{context}: [{nick}] {message}",
+  "message_content": "{nick}: {message}",
   "message_length":  100,
 
   "away_only":         false,

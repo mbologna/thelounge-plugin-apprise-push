@@ -255,43 +255,65 @@ function makeHandler(cfg, lastNotified) {
   };
 }
 
-// ── Network listener attachment ────────────────────────────────────────────────
+// ── Network hook via monkey-patch ──────────────────────────────────────────────
 
-function attach(client, network, handle, seen) {
-  if (!network.irc) return;
-  // Re-attach if irc-framework instance was replaced (reconnect)
-  if (seen.get(network) === network.irc) return;
-  seen.set(network, network.irc);
+// TheLounge's plugin API (onServerStart) does not expose server.clients.
+// Instead we patch Network.prototype.createIrcFramework, which is called once
+// per network connection (and again on manual reconnect), giving us `this.irc`
+// right after it is created — before any messages can arrive.
+// Timing is correct: loadPackages() (which calls onServerStart) runs before
+// manager.init() which triggers client.connect() → network.createIrcFramework().
 
-  // irc-framework emits a generic "message" event for PRIVMSG and CTCP ACTION.
-  // event.type: "privmsg" | "action" | "notice"
-  // event.from_server: true for server-generated messages (skip those)
-  network.irc.on("message", (event) => {
-    if (event.from_server)      return;
-    if (event.type === "notice") return;
+function setupNetworkHook(handle, cfg) {
+  const networkModPath = Object.keys(require.cache).find(
+    (k) => k.includes("thelounge") && k.endsWith("/models/network.js")
+  );
 
-    const isQuery = !event.target.startsWith("#");
-    handle({
-      client,
-      network,
-      target:      isQuery ? event.nick : event.target,
-      senderNick:  event.nick,
-      // Prefix /me actions so they read naturally: "* nick waves"
-      rawMessage:  event.type === "action"
-        ? `* ${event.nick} ${event.message}`
-        : event.message,
-      isQuery,
-    });
-  });
-
-  if (cfg_debug_ref.debug) {
-    console.log(`[apprise-push] attached: ${network.name || network.host}`);
+  if (!networkModPath) {
+    console.error("[apprise-push] network.js not found in module cache — plugin inactive");
+    return false;
   }
-}
 
-// Module-level debug ref so the attach closure can read it without capturing cfg
-// (cfg is not in scope at module level; this is set in onServerStart)
-let cfg_debug_ref = { debug: false };
+  const Network = require(networkModPath).default;
+  if (!Network?.prototype?.createIrcFramework) {
+    console.error("[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive");
+    return false;
+  }
+
+  const orig = Network.prototype.createIrcFramework;
+  Network.prototype.createIrcFramework = function (client) {
+    orig.call(this, client);
+
+    const network = this;
+
+    // irc-framework emits a generic "message" event for PRIVMSG and CTCP ACTION.
+    // event.type: "privmsg" | "action" | "notice"
+    // event.from_server: true for server-generated messages (skip those)
+    network.irc.on("message", (event) => {
+      if (event.from_server)       return;
+      if (event.type === "notice") return;
+
+      const isQuery = !event.target.startsWith("#");
+      handle({
+        client,
+        network,
+        target:     isQuery ? event.nick : event.target,
+        senderNick: event.nick,
+        // Prefix /me actions so they read naturally: "* nick waves"
+        rawMessage: event.type === "action"
+          ? `* ${event.nick} ${event.message}`
+          : event.message,
+        isQuery,
+      });
+    });
+
+    if (cfg.debug) {
+      console.log(`[apprise-push] attached: ${network.name || network.host}`);
+    }
+  };
+
+  return true;
+}
 
 // ── Plugin entry point ─────────────────────────────────────────────────────────
 
@@ -317,7 +339,6 @@ module.exports.onServerStart = (server) => {
   for (const key of ["apprise_urls", "nick_blacklist", "network_blacklist", "highlight_words"]) {
     if (!Array.isArray(cfg[key])) cfg[key] = cfg[key] ? [cfg[key]] : [];
   }
-  cfg_debug_ref = cfg;
 
   if (!cfg.apprise_api_url) {
     console.warn("[apprise-push] apprise_api_url not set — plugin inactive");
@@ -325,25 +346,9 @@ module.exports.onServerStart = (server) => {
   }
 
   const lastNotified = new Map(); // clientKey → unix timestamp
-  const seen         = new Map(); // network object → irc-framework instance
   const handle       = makeHandler(cfg, lastNotified);
 
-  function scan() {
-    const clients =
-      server.clients instanceof Map  ? server.clients.values()  :
-      Array.isArray(server.clients)  ? server.clients           :
-      Object.values(server.clients || {});
-
-    for (const client of clients) {
-      for (const network of client.networks || []) {
-        attach(client, network, handle, seen);
-      }
-    }
-  }
-
-  scan();
-  // Poll every 5 s to pick up new networks or reconnected irc instances
-  setInterval(scan, 5000).unref();
+  if (!setupNetworkHook(handle, cfg)) return;
 
   console.log("[apprise-push] started");
 };
