@@ -9,20 +9,18 @@ const { URL } = require("url");
 // ── Defaults ───────────────────────────────────────────────────────────────────
 
 const DEFAULTS = {
-  // Required
-  apprise_api_url: "",   // e.g. "http://localhost:8000"
-  apprise_urls:    [],   // e.g. ["tgram://bottoken/chatid"]
+  // Required — full Apprise API notify endpoint, e.g. "http://apprise:8000/notify/chatnotifications"
+  apprise_url: "",
 
-  // Notification text — supports keyword expansion (see README)
-  message_title:     "{title}",          // fallback if pm/chan title not set
-  message_title_pm:  "PM [{network}]",
-  message_title_chan: "Mention [{network}] {context}",
-  message_content:   "{nick}: {message}",
-  message_length:    100,   // 0 = no truncation
+  // Notification text — supports {nick}, {channel}, {network}, {message}
+  title_pm:   "PM from {nick} [{network}]",
+  title_chan:  "[{network}] {channel}",
+  body:        "{nick}: {message}",
+  body_length: 100,  // 0 = no truncation
 
   // Global pre-filters (applied before any rule)
-  away_only:         false,  // only notify when no browser tabs are open
-  cooldown:          300,    // seconds between notifications per context (0 = off)
+  away_only:         false,
+  cooldown:          0,      // seconds between notifications per context (0 = disabled)
   nick_blacklist:    [],     // glob patterns — nicks that never trigger notifications
   network_blacklist: [],     // glob patterns — network names that never trigger
   highlight_words:   [],     // extra words/patterns that count as a highlight
@@ -91,12 +89,12 @@ function isHighlight(cfg, myNick, message) {
 // If no conditions are specified the rule matches everything.
 
 function matchRule(rule, ctx) {
-  const { isQuery, target, senderNick, networkName, isHl } = ctx;
+  const { isQuery, channel, senderNick, networkName, isHl } = ctx;
 
   // `channel` — only channel messages in matching channels
   if (rule.channel !== undefined) {
     if (isQuery) return false;
-    if (!matchesAny([].concat(rule.channel), target)) return false;
+    if (!matchesAny([].concat(rule.channel), channel)) return false;
   }
 
   // `pm` — only private messages
@@ -159,18 +157,15 @@ function truncate(str, maxLen) {
 // ── Apprise HTTP API ───────────────────────────────────────────────────────────
 
 function sendApprise(cfg, title, body) {
-  const endpoint = cfg.apprise_api_url.replace(/\/$/, "") + "/notify";
   let parsed;
   try {
-    parsed = new URL(endpoint);
+    parsed = new URL(cfg.apprise_url);
   } catch (e) {
-    console.error(`[apprise-push] invalid apprise_api_url: ${e.message}`);
+    console.error(`[apprise-push] invalid apprise_url: ${e.message}`);
     return;
   }
 
-  const payload = Buffer.from(
-    JSON.stringify({ urls: cfg.apprise_urls, title, body })
-  );
+  const payload = Buffer.from(JSON.stringify({ title, body }));
 
   const options = {
     hostname: parsed.hostname,
@@ -213,7 +208,7 @@ function makeHandler(cfg, lastNotified) {
 
     const ctx = {
       isQuery,
-      target,
+      channel:     target,
       senderNick,
       networkName,
       isHl: isHighlight(cfg, myNick, cleanMessage),
@@ -231,25 +226,15 @@ function makeHandler(cfg, lastNotified) {
     }
     if (decision !== "notify") return;
 
-    // Build and send notification
-    const shortMsg     = truncate(cleanMessage, cfg.message_length);
-    const defaultTitle = isQuery
-      ? `PM from ${senderNick} [${networkName}]`
-      : `[${networkName}] ${target}`;
-
     const vars = {
-      context:  target,
-      nick:     senderNick,
-      network:  networkName,
-      datetime: new Date().toISOString().replace("T", " ").slice(0, 19),
-      unixtime: String(now),
-      title:    defaultTitle,
-      message:  shortMsg,
+      channel: target,
+      nick:    senderNick,
+      network: networkName,
+      message: truncate(cleanMessage, cfg.body_length),
     };
 
-    const titleTemplate = isQuery ? cfg.message_title_pm : cfg.message_title_chan;
-    const title = expand(titleTemplate || cfg.message_title, vars);
-    const body  = expand(cfg.message_content, vars);
+    const title = expand(isQuery ? cfg.title_pm : cfg.title_chan, vars);
+    const body  = expand(cfg.body, vars);
 
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
 
@@ -339,12 +324,12 @@ module.exports.onServerStart = (server) => {
 
   const cfg = { ...DEFAULTS, ...userCfg };
   // Normalise list fields so callers always get arrays
-  for (const key of ["apprise_urls", "nick_blacklist", "network_blacklist", "highlight_words"]) {
+  for (const key of ["nick_blacklist", "network_blacklist", "highlight_words"]) {
     if (!Array.isArray(cfg[key])) cfg[key] = cfg[key] ? [cfg[key]] : [];
   }
 
-  if (!cfg.apprise_api_url) {
-    console.warn("[apprise-push] apprise_api_url not set — plugin inactive");
+  if (!cfg.apprise_url) {
+    console.warn("[apprise-push] apprise_url not set — plugin inactive");
     return;
   }
 

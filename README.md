@@ -9,7 +9,7 @@ Supports nick highlights, whole-channel monitoring, private messages, and fine-g
 ## Requirements
 
 - TheLounge ≥ 4.0
-- A running [Apprise API](https://github.com/caronc/apprise/wiki/api_overview) server (`apprise-api` Docker image or bare metal)
+- A running [Apprise API](https://github.com/caronc/apprise/wiki/api_overview) server with a persistent notification configuration pre-loaded under a key (e.g. `chatnotifications`)
 
 ---
 
@@ -49,34 +49,27 @@ All options go in `$THELOUNGE_HOME/apprise-push.json` (usually `~/.thelounge/app
 
 | Key | Type | Description |
 |---|---|---|
-| `apprise_api_url` | string | Base URL of your Apprise API server, e.g. `"http://localhost:8000"` |
-| `apprise_urls` | string[] | One or more [Apprise notification URLs](https://github.com/caronc/apprise#supported-notifications), e.g. `["tgram://bottoken/chatid"]` |
+| `apprise_url` | string | Full Apprise API notify endpoint, e.g. `"http://apprise:8000/notify/chatnotifications"` |
 
-The plugin posts to `{apprise_api_url}/notify` with:
-
-```json
-{ "urls": [...], "title": "...", "body": "..." }
-```
+The plugin POSTs `{ "title": "...", "body": "..." }` to this URL. The notification destinations are configured server-side in Apprise under the given key.
 
 ### Notification text
 
 | Key | Default | Description |
 |---|---|---|
-| `message_title` | `"{title}"` | Notification title. Supports keyword expansion (see below). |
-| `message_content` | `"{context}: [{nick}] {message}"` | Notification body. Supports keyword expansion. |
-| `message_length` | `100` | Truncate `{message}` to this many characters. `0` = unlimited. |
+| `title_pm` | `"PM from {nick} [{network}]"` | Title for private message notifications. |
+| `title_chan` | `"[{network}] {channel}"` | Title for channel notifications. |
+| `body` | `"{nick}: {message}"` | Notification body. |
+| `body_length` | `100` | Truncate `{message}` to this many characters. `0` = unlimited. |
 
-**Keyword expansion** — these placeholders are replaced in `message_title` and `message_content`:
+**Keyword expansion** — these placeholders are replaced in `title_pm`, `title_chan`, and `body`:
 
 | Keyword | Value |
 |---|---|
-| `{context}` | Channel name or sender nick (for PMs) |
+| `{channel}` | Channel name or sender nick (for PMs) |
 | `{nick}` | Message sender |
 | `{network}` | IRC network name |
-| `{datetime}` | `YYYY-MM-DD HH:MM:SS` (server local time) |
-| `{unixtime}` | Unix timestamp |
-| `{title}` | Default computed title: `[Network] #channel` or `PM from nick [Network]` |
-| `{message}` | Message text (IRC formatting stripped, truncated) |
+| `{message}` | Message text (IRC formatting stripped, truncated to `body_length`) |
 
 ### Global pre-filters
 
@@ -85,10 +78,10 @@ These apply before any rule is evaluated. They are fast exits.
 | Key | Default | Description |
 |---|---|---|
 | `away_only` | `false` | Only notify when **no** TheLounge browser tabs are connected. Equivalent to ZNC's away-only mode. |
-| `cooldown` | `300` | Minimum seconds between two notifications for the same context (channel or PM). `0` = disabled. |
+| `cooldown` | `0` | Minimum seconds between two notifications for the same context (channel or PM). `0` = disabled. |
 | `nick_blacklist` | `[]` | Glob patterns. Messages from matching nicks are silently dropped. E.g. `["*bot*", "ChanServ"]`. |
 | `network_blacklist` | `[]` | Glob patterns. Messages from matching network names are silently dropped. |
-| `highlight_words` | `[]` | Extra words/patterns that count as a highlight in addition to your own nick. E.g. `["projectname", "urgent"]`. Glob patterns accepted. |
+| `highlight_words` | `[]` | Extra words/patterns that count as a highlight in addition to your own nick. Glob patterns accepted. |
 
 ### Rules
 
@@ -161,16 +154,6 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### All messages from a channel, highlights everywhere else
-
-```json
-"rules": [
-  { "channel": "#announcements" },
-  { "highlight": true },
-  { "pm": true }
-]
-```
-
 ### Suppress a noisy channel before a catch-all
 
 ```json
@@ -226,7 +209,7 @@ The quickest way to run the Apprise API server:
 docker run -p 8000:8000 caronc/apprise:latest
 ```
 
-Then set `apprise_api_url` to `"http://localhost:8000"` and put your notification URLs in `apprise_urls`.
+Load your notification URLs into Apprise under a key (e.g. `chatnotifications`) via the web UI or API, then set `apprise_url` to `"http://apprise:8000/notify/chatnotifications"`.
 
 See the [Apprise wiki](https://github.com/caronc/apprise/wiki) for the full list of supported services (Telegram, Pushover, Slack, Discord, Gotify, ntfy, and many more).
 
@@ -238,7 +221,7 @@ Set `"debug": true` in the config. Each incoming message will log its evaluation
 
 ```
 [apprise-push] chan "#dev" from "alice" hl=true → notify
-[apprise-push] → "[Libera] #dev" / "#dev: [alice] hey yourname, take a look"
+[apprise-push] → "[Libera] #dev" / "alice: hey yourname, take a look"
 [apprise-push] Apprise → HTTP 200
 ```
 
@@ -248,5 +231,5 @@ Set `"debug": true` in the config. Each incoming message will log its evaluation
 
 - **`/me` actions** (`* nick does something`) are included as triggers. The action text is prefixed with `* nick` in the notification body.
 - **Cooldown** is tracked independently per context (each channel and each PM thread has its own timer).
-- **Reconnects** are handled automatically: the plugin re-attaches to a network's IRC connection within 5 seconds of reconnection.
+- **Reconnects** are handled automatically: the plugin re-attaches to a network's IRC connection on reconnection.
 - The plugin has no npm dependencies beyond Node.js built-ins.
