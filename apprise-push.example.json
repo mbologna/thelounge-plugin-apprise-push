@@ -1,15 +1,13 @@
 {
-  "apprise_api_url": "http://localhost:8000",
-  "apprise_urls": ["tgram://bottoken/chatid"],
+  "apprise_url": "http://apprise:8000/notify/chatnotifications",
 
-  "message_title":     "{title}",
-  "message_title_pm":  "PM [{network}]",
-  "message_title_chan": "Mention [{network}] {context}",
-  "message_content":   "{nick}: {message}",
-  "message_length":  100,
+  "title_pm":   "PM from {nick} [{network}]",
+  "title_chan":  "[{network}] {channel}",
+  "body":        "{nick}: {message}",
+  "body_length": 100,
 
   "away_only":         false,
-  "cooldown":          300,
+  "cooldown":          0,
   "nick_blacklist":    ["*bot*", "ChanServ", "NickServ"],
   "network_blacklist": [],
   "highlight_words":   [],
