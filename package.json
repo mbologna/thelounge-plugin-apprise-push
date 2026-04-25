@@ -9,6 +9,19 @@
   "thelounge": {
     "supports": ">=4.0.0"
   },
-  "keywords": ["thelounge", "plugin", "apprise", "notifications", "push"],
-  "license": "MIT"
+  "keywords": ["thelounge", "thelounge-plugin", "apprise", "notifications", "push"],
+  "license": "MIT",
+  "author": "Michele Bologna",
+  "homepage": "https://github.com/mbologna/thelounge-plugin-apprise-push#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbologna/thelounge-plugin-apprise-push.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mbologna/thelounge-plugin-apprise-push/issues"
+  },
+  "files": [
+    "index.js",
+    "apprise-push.example.json"
+  ]
 }

@@ -15,29 +15,15 @@ Supports nick highlights, whole-channel monitoring, private messages, and fine-g
 
 ## Installation
 
-1. **Copy the plugin into TheLounge's packages directory:**
+1. **Install the plugin:**
 
    ```bash
-   mkdir -p ~/.thelounge/packages/node_modules
-   cp -r /path/to/thelounge-plugin-apprise-push \
-     ~/.thelounge/packages/node_modules/thelounge-plugin-apprise-push
+   thelounge install thelounge-plugin-apprise-push
    ```
 
-   Or symlink during development:
+2. **Create the config file** at `~/.thelounge/apprise-push.json` (see [Configuration](#configuration) below).
 
-   ```bash
-   ln -s /path/to/thelounge-plugin-apprise-push \
-     ~/.thelounge/packages/node_modules/thelounge-plugin-apprise-push
-   ```
-
-2. **Create the config file:**
-
-   ```bash
-   cp apprise-push.example.json ~/.thelounge/apprise-push.json
-   # edit to taste
-   ```
-
-3. **Restart TheLounge.**
+3. **Restart TheLounge** to pick up the config.
 
 ---
 
