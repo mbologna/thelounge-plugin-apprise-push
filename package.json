@@ -1,6 +1,6 @@
 {
   "name": "thelounge-plugin-apprise-push",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TheLounge server plugin: push notifications via Apprise HTTP API",
   "main": "index.js",
   "engines": {
@@ -9,7 +9,13 @@
   "thelounge": {
     "supports": ">=4.0.0"
   },
-  "keywords": ["thelounge", "thelounge-plugin", "apprise", "notifications", "push"],
+  "keywords": [
+    "thelounge",
+    "thelounge-plugin",
+    "apprise",
+    "notifications",
+    "push"
+  ],
   "license": "MIT",
   "author": "Michele Bologna",
   "homepage": "https://github.com/mbologna/thelounge-plugin-apprise-push#readme",
