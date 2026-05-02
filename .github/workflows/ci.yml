@@ -1,23 +1,16 @@
 name: CI
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  validate:
-    name: Validate
-    runs-on: ubuntu-latest
+  ci:
+    uses: mbologna/.github/.github/workflows/node-ci.yml@main
+    with:
+      node_version: lts/*
+      package_manager: npm
+      test_command: pack --dry-run
 
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: lts/*
-
-      - name: Verify package
-        run: npm pack --dry-run
