@@ -1,29 +1,14 @@
 name: Publish to npm
 
-on:
+"on":
   release:
     types: [published]
 
 jobs:
   publish:
-    name: Publish
-    runs-on: ubuntu-latest
+    uses: mbologna/.github/.github/workflows/npm-publish.yml@main
+    with:
+      node_version: lts/*
+      package_manager: npm
+    secrets: inherit
 
-    # Required for npm provenance
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: lts/*
-          registry-url: https://registry.npmjs.org
-
-      - name: Publish to npm (with provenance)
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
