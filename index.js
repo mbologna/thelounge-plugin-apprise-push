@@ -1,8 +1,8 @@
 "use strict";
 
-const fs   = require("fs");
-const path = require("path");
-const http = require("http");
+const fs    = require("fs");
+const path  = require("path");
+const http  = require("http");
 const https = require("https");
 const { URL } = require("url");
 
@@ -37,9 +37,10 @@ const DEFAULTS = {
 
 // ── Wildcard matching ──────────────────────────────────────────────────────────
 
-// Case-insensitive glob matching (* = any sequence, ? = any char).
-function glob(pattern, str) {
-  const re = new RegExp(
+// Compiles a case-insensitive glob pattern (* = any sequence, ? = any char) to a RegExp.
+// Call once at config load time; reuse the result to avoid per-message recompilation.
+function makeGlobRe(pattern) {
+  return new RegExp(
     "^" +
       String(pattern)
         .replace(/[.+^${}()|[\]\\]/g, "\\$&")
@@ -48,12 +49,11 @@ function glob(pattern, str) {
       "$",
     "i"
   );
-  return re.test(str);
 }
 
-// Returns true if `value` matches any pattern in `list` (array of globs).
-function matchesAny(list, value) {
-  return list.some((p) => glob(p, value));
+// Returns true if `value` matches any pre-compiled RegExp in `reList`.
+function matchesAny(reList, value) {
+  return reList.some((re) => re.test(value));
 }
 
 // ── Highlight detection ────────────────────────────────────────────────────────
@@ -64,14 +64,57 @@ function stripIrcFormatting(str) {
     .replace(/[\x00-\x1F\x7F]/g, "");         // all other control chars
 }
 
-// Returns true if the message is a highlight: own nick or a configured highlight word.
+// Returns true if the message is a highlight: own nick (case-insensitive substring)
+// or a pre-compiled highlight-word pattern.
 function isHighlight(cfg, myNick, message) {
-  const lower = message.toLowerCase();
-  if (lower.includes(myNick.toLowerCase())) return true;
-  for (const word of cfg.highlight_words) {
-    if (glob(`*${word}*`, message)) return true;
+  if (message.toLowerCase().includes(myNick.toLowerCase())) return true;
+  return cfg.highlightRe.some((re) => re.test(message));
+}
+
+// ── Config loading & compilation ───────────────────────────────────────────────
+
+const VALID_ACTIONS = new Set(["notify", "suppress"]);
+
+// Merges user config with defaults, normalises fields, pre-compiles all glob
+// patterns, validates rule actions, and pre-parses apprise_url — so none of
+// that work happens per-message.
+function compileConfig(raw) {
+  const cfg = { ...DEFAULTS, ...raw };
+
+  // Normalise list fields so callers always get arrays
+  for (const key of ["nick_blacklist", "network_blacklist", "highlight_words"]) {
+    if (!Array.isArray(cfg[key])) cfg[key] = cfg[key] ? [cfg[key]] : [];
   }
-  return false;
+
+  // Pre-compile glob patterns → RegExp
+  cfg.nickBlacklistRe    = cfg.nick_blacklist.map(makeGlobRe);
+  cfg.networkBlacklistRe = cfg.network_blacklist.map(makeGlobRe);
+  cfg.highlightRe        = cfg.highlight_words.map((w) => makeGlobRe(`*${w}*`));
+
+  // Clone rule objects (avoid mutating DEFAULTS.rules), validate actions,
+  // and pre-compile per-rule glob patterns.
+  cfg.rules = (raw.rules || DEFAULTS.rules).map((r) => {
+    const rule = { ...r };
+    if (rule.action !== undefined && !VALID_ACTIONS.has(rule.action)) {
+      console.warn(`[apprise-push] unknown rule action "${rule.action}" — treated as "notify"`);
+    }
+    if (rule.channel !== undefined) rule._channelRe = [].concat(rule.channel).map(makeGlobRe);
+    if (rule.network !== undefined) rule._networkRe = [].concat(rule.network).map(makeGlobRe);
+    if (rule.nick    !== undefined) rule._nickRe    = [].concat(rule.nick).map(makeGlobRe);
+    return rule;
+  });
+
+  // Pre-parse and validate apprise_url — fail fast at load time, not per-send
+  cfg.parsedUrl = null;
+  if (cfg.apprise_url) {
+    try {
+      cfg.parsedUrl = new URL(cfg.apprise_url);
+    } catch (e) {
+      console.error(`[apprise-push] invalid apprise_url: ${e.message}`);
+    }
+  }
+
+  return cfg;
 }
 
 // ── Rule matching ──────────────────────────────────────────────────────────────
@@ -87,32 +130,28 @@ function isHighlight(cfg, myNick, message) {
 //   nick      string|string[]  glob(s) matched against the sender nick
 //
 // If no conditions are specified the rule matches everything.
+// Pre-compiled RegExp versions are stored in _channelRe / _networkRe / _nickRe.
 
 function matchRule(rule, ctx) {
   const { isQuery, channel, senderNick, networkName, isHl } = ctx;
 
   // `channel` — only channel messages in matching channels
-  if (rule.channel !== undefined) {
-    if (isQuery) return false;
-    if (!matchesAny([].concat(rule.channel), channel)) return false;
+  if (rule._channelRe !== undefined) {
+    if (isQuery || !matchesAny(rule._channelRe, channel)) return false;
   }
 
   // `pm` — only private messages
-  if (rule.pm === true && !isQuery) return false;
-  if (rule.pm === false && isQuery) return false;
+  if (rule.pm === true  && !isQuery) return false;
+  if (rule.pm === false &&  isQuery) return false;
 
   // `highlight` — must be a highlight
   if (rule.highlight === true && !isHl) return false;
 
   // `network`
-  if (rule.network !== undefined) {
-    if (!matchesAny([].concat(rule.network), networkName)) return false;
-  }
+  if (rule._networkRe !== undefined && !matchesAny(rule._networkRe, networkName)) return false;
 
   // `nick` — sender nick
-  if (rule.nick !== undefined) {
-    if (!matchesAny([].concat(rule.nick), senderNick)) return false;
-  }
+  if (rule._nickRe !== undefined && !matchesAny(rule._nickRe, senderNick)) return false;
 
   return true;
 }
@@ -124,8 +163,8 @@ function evaluate(cfg, ctx, lastNotified) {
 
   // Global pre-filters
   if (cfg.away_only && attachedCount > 0) return "skip";
-  if (matchesAny(cfg.nick_blacklist,    senderNick))  return "skip";
-  if (matchesAny(cfg.network_blacklist, networkName)) return "skip";
+  if (matchesAny(cfg.nickBlacklistRe,    senderNick))  return "skip";
+  if (matchesAny(cfg.networkBlacklistRe, networkName)) return "skip";
 
   // Per-context cooldown
   if (cfg.cooldown > 0) {
@@ -157,13 +196,8 @@ function truncate(str, maxLen) {
 // ── Apprise HTTP API ───────────────────────────────────────────────────────────
 
 function sendApprise(cfg, title, body) {
-  let parsed;
-  try {
-    parsed = new URL(cfg.apprise_url);
-  } catch (e) {
-    console.error(`[apprise-push] invalid apprise_url: ${e.message}`);
-    return;
-  }
+  const parsed = cfg.parsedUrl;
+  if (!parsed) return; // invalid URL already logged at compile time
 
   const payload = Buffer.from(JSON.stringify({ title, body }));
 
@@ -182,6 +216,8 @@ function sendApprise(cfg, title, body) {
   const req = transport.request(options, (res) => {
     if (cfg.debug) console.log(`[apprise-push] Apprise → HTTP ${res.statusCode}`);
   });
+  // Destroy the socket after 10 s to avoid connections piling up when Apprise is slow/down
+  req.setTimeout(10_000, () => req.destroy(new Error("request timeout")));
   req.on("error", (e) =>
     console.error(`[apprise-push] Apprise request failed: ${e.message}`)
   );
@@ -190,8 +226,12 @@ function sendApprise(cfg, title, body) {
 
 // ── Message handler factory ────────────────────────────────────────────────────
 
-function makeHandler(cfg, lastNotified) {
+// Accepts a `getCfg` getter so hot-reloaded config is always picked up without
+// re-registering the irc-framework event listener.
+function makeHandler(getCfg, lastNotified) {
   return function handle({ client, network, target, senderNick, rawMessage, isQuery }) {
+    const cfg = getCfg();
+
     const myNick = network.irc?.user?.nick || network.nick || "";
     if (!myNick) return;
     if (senderNick.toLowerCase() === myNick.toLowerCase()) return;
@@ -239,7 +279,9 @@ function makeHandler(cfg, lastNotified) {
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
 
     sendApprise(cfg, title, body);
-    lastNotified.set(clientKey, now);
+    // Only track timestamps when cooldown is active — avoids unbounded Map growth
+    // when cooldown=0 (entries would be written but never read)
+    if (cfg.cooldown > 0) lastNotified.set(clientKey, now);
   };
 }
 
@@ -252,7 +294,9 @@ function makeHandler(cfg, lastNotified) {
 // Timing is correct: loadPackages() (which calls onServerStart) runs before
 // manager.init() which triggers client.connect() → network.createIrcFramework().
 
-function setupNetworkHook(handle, cfg) {
+const PATCHED = Symbol("apprisePushPatched");
+
+function setupNetworkHook(handle, getCfg) {
   const networkModPath = Object.keys(require.cache).find(
     (k) => k.includes("thelounge") && k.endsWith("/models/network.js")
   );
@@ -267,6 +311,11 @@ function setupNetworkHook(handle, cfg) {
     console.error("[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive");
     return false;
   }
+
+  // Guard against double-patching — would otherwise add duplicate "message" listeners
+  // if the plugin entry point is ever called more than once in the same process.
+  if (Network.prototype[PATCHED]) return true;
+  Network.prototype[PATCHED] = true;
 
   const orig = Network.prototype.createIrcFramework;
   Network.prototype.createIrcFramework = function (client) {
@@ -295,7 +344,7 @@ function setupNetworkHook(handle, cfg) {
       });
     });
 
-    if (cfg.debug) {
+    if (getCfg().debug) {
       console.log(`[apprise-push] attached: ${network.name || network.host}`);
     }
   };
@@ -314,29 +363,46 @@ module.exports.onServerStart = (server) => {
     return;
   }
 
-  let userCfg;
+  let rawCfg;
   try {
-    userCfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    rawCfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   } catch (e) {
     console.error(`[apprise-push] config parse error: ${e.message}`);
     return;
   }
 
-  const cfg = { ...DEFAULTS, ...userCfg };
-  // Normalise list fields so callers always get arrays
-  for (const key of ["nick_blacklist", "network_blacklist", "highlight_words"]) {
-    if (!Array.isArray(cfg[key])) cfg[key] = cfg[key] ? [cfg[key]] : [];
-  }
+  let cfg = compileConfig(rawCfg);
 
   if (!cfg.apprise_url) {
     console.warn("[apprise-push] apprise_url not set — plugin inactive");
     return;
   }
 
-  const lastNotified = new Map(); // clientKey → unix timestamp
-  const handle       = makeHandler(cfg, lastNotified);
+  const lastNotified = new Map();
+  const getCfg = () => cfg;
+  const handle = makeHandler(getCfg, lastNotified);
 
-  if (!setupNetworkHook(handle, cfg)) return;
+  if (!setupNetworkHook(handle, getCfg)) return;
+
+  // Hot-reload: recompile config whenever the file changes — no TheLounge restart needed.
+  // Debounced (200 ms) because editors often write files in multiple flush events.
+  let reloadTimer = null;
+  fs.watch(cfgPath, { persistent: false }, () => {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      try {
+        const newRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        cfg = compileConfig(newRaw);
+        console.log(
+          cfg.apprise_url
+            ? "[apprise-push] config reloaded"
+            : "[apprise-push] config reloaded — apprise_url unset, notifications disabled"
+        );
+      } catch (e) {
+        console.error(`[apprise-push] config reload failed: ${e.message} — keeping previous config`);
+      }
+    }, 200);
+  });
 
   console.log("[apprise-push] started");
 };
