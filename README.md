@@ -23,7 +23,7 @@ Supports nick highlights, whole-channel monitoring, private messages, and fine-g
 
 2. **Create the config file** at `~/.thelounge/apprise-push.json` (see [Configuration](#configuration) below).
 
-3. **Restart TheLounge** to pick up the config.
+3. **Restart TheLounge** once to load the plugin. After that, config changes are picked up automatically — no further restarts needed.
 
 ---
 
@@ -217,5 +217,6 @@ Set `"debug": true` in the config. Each incoming message will log its evaluation
 
 - **`/me` actions** (`* nick does something`) are included as triggers. The action text is prefixed with `* nick` in the notification body.
 - **Cooldown** is tracked independently per context (each channel and each PM thread has its own timer).
+- **Hot-reload**: `apprise-push.json` is watched for changes. Edits take effect within a second — no TheLounge restart required. If the file is invalid JSON the previous config is kept and an error is logged.
 - **Reconnects** are handled automatically: the plugin re-attaches to a network's IRC connection on reconnection.
 - The plugin has no npm dependencies beyond Node.js built-ins.
