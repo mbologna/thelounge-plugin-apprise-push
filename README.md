@@ -1,9 +1,3 @@
-# thelounge-plugin-apprise-push
-
-A [TheLounge](https://thelounge.chat) server plugin that sends push notifications via the [Apprise](https://github.com/caronc/apprise) HTTP API.
-
-Supports nick highlights, whole-channel monitoring, private messages, and fine-grained suppression — all configured through an ordered rule list.
-
 ---
 
 ## Requirements
@@ -23,7 +17,7 @@ Supports nick highlights, whole-channel monitoring, private messages, and fine-g
 
 2. **Create the config file** at `~/.thelounge/apprise-push.json` (see [Configuration](#configuration) below).
 
-3. **Restart TheLounge** once to load the plugin. After that, config changes are picked up automatically — no further restarts needed.
+3. **Restart TheLounge** once to load the plugin. After that, config changes are picked up automatically. No further restarts needed.
 
 ---
 
@@ -48,7 +42,7 @@ The plugin POSTs `{ "title": "...", "body": "..." }` to this URL. The notificati
 | `body` | `"{nick}: {message}"` | Notification body. |
 | `body_length` | `100` | Truncate `{message}` to this many characters. `0` = unlimited. |
 
-**Keyword expansion** — these placeholders are replaced in `title_pm`, `title_chan`, and `body`:
+**Keyword expansion**: these placeholders are replaced in `title_pm`, `title_chan`, and `body`:
 
 | Keyword | Value |
 |---|---|
@@ -101,7 +95,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 
 ## Examples
 
-### Default — highlights and PMs
+### Default: highlights and PMs
 
 ```json
 "rules": [
@@ -120,7 +114,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Multiple channels — all messages
+### Multiple channels: all messages
 
 ```json
 "rules": [
