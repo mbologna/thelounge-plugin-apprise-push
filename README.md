@@ -211,6 +211,6 @@ Set `"debug": true` in the config. Each incoming message will log its evaluation
 
 - **`/me` actions** (`* nick does something`) are included as triggers. The action text is prefixed with `* nick` in the notification body.
 - **Cooldown** is tracked independently per context (each channel and each PM thread has its own timer).
-- **Hot-reload**: `apprise-push.json` is watched for changes. Edits take effect within a second — no TheLounge restart required. If the file is invalid JSON the previous config is kept and an error is logged.
+- **Hot-reload**: `apprise-push.json` is watched for changes. Edits take effect within a second; no TheLounge restart required. If the file is invalid JSON the previous config is kept and an error is logged.
 - **Reconnects** are handled automatically: the plugin re-attaches to a network's IRC connection on reconnection.
 - The plugin has no npm dependencies beyond Node.js built-ins.
