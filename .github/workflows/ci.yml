@@ -3,9 +3,24 @@ name: CI
 "on":
   push:
     branches: [main]
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: write
 
 jobs:
   ci:
-    uses: mbologna/.github/.github/workflows/node-ci.yml@af64a3169c2eb27c42434346d87d7116b44ec401 # main
+    uses: mbologna/.github/.github/workflows/node-ci.yml@b76cd3762a1b6787ae79e88f7c012b2dc848f325 # main
+    with:
+      enable_release_drafter: true
+
+  auto-release:
+    if: github.event_name == 'schedule'
+    uses: mbologna/.github/.github/workflows/auto-release.yml@b76cd3762a1b6787ae79e88f7c012b2dc848f325 # main
+    with:
+      strategy: commits
+    secrets: inherit
