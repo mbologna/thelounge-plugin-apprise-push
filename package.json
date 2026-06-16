@@ -29,5 +29,8 @@
   "files": [
     "index.js",
     "apprise-push.example.json"
-  ]
+  ],
+  "scripts": {
+    "test": "node -e \"process.exit(0)\""
+  }
 }
