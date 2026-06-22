@@ -1,14 +1,55 @@
 name: Publish to npm
 
+# Publishes on every published GitHub Release.
+#
+# The version is taken from the release TAG (e.g. v1.2.0), not from the
+# committed package.json. The auto-release workflow pushes patch tags
+# (v1.1.0 -> v1.1.1) without touching package.json, so publishing the raw
+# package.json version would keep re-publishing an already-published version
+# and fail with a 403. Syncing package.json to the tag here makes the tag the
+# single source of truth and keeps npm in lock-step with GitHub releases.
+
 "on":
   release:
     types: [published]
 
+permissions:
+  contents: read
+  id-token: write # required for npm provenance
+
 jobs:
   publish:
-    uses: mbologna/.github/.github/workflows/npm-publish.yml@17e62b3f3f9e7985d155f652d47162ffada15cb6 # main
-    with:
-      node_version: lts/*
-      package_manager: npm
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+
+      - name: Sync package.json version to the release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          echo "Release tag: ${TAG} -> version ${VERSION}"
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Test
+        run: npm test
+
+      - name: Publish to npm (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
