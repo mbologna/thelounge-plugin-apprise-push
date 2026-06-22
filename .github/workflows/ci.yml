@@ -14,13 +14,13 @@ permissions:
 
 jobs:
   ci:
-    uses: mbologna/.github/.github/workflows/node-ci.yml@bc67bfd693eafaf8371ae6ba2626e1f977ab3311 # main
+    uses: mbologna/.github/.github/workflows/node-ci.yml@17e62b3f3f9e7985d155f652d47162ffada15cb6 # main
     with:
       enable_release_drafter: true
 
   auto-release:
     if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/auto-release.yml@bc67bfd693eafaf8371ae6ba2626e1f977ab3311 # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@17e62b3f3f9e7985d155f652d47162ffada15cb6 # main
     with:
       strategy: commits
     secrets: inherit
