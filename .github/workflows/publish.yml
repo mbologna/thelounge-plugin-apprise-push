@@ -1,5 +1,15 @@
 name: Publish to npm
 
+# Standalone (non-reusable) publish workflow.
+#
+# npm Trusted Publishing (OIDC) validates the OIDC token claims against the
+# package's trusted-publisher config on npmjs.com. When the publish command runs
+# inside a *reusable* workflow, the `job_workflow_ref` claim points at the
+# reusable file rather than this entrypoint, which can cause an
+# "OIDC token exchange error - package not found". Running npm publish directly
+# here makes both the `workflow_ref` and `job_workflow_ref` claims resolve to
+# this file (`publish.yml`), exactly matching the trusted-publisher config.
+
 "on":
   release:
     types: [published]
@@ -10,9 +20,62 @@ permissions:
 
 jobs:
   publish:
-    uses: mbologna/.github/.github/workflows/npm-publish.yml@0dd1207f90e4077eab02f6a0918f4c59a0d97431 # main
-    with:
-      node_version: lts/*
-      package_manager: npm
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Upgrade npm for Trusted Publishing (OIDC) support
+        # npm Trusted Publishing (OIDC) requires npm >= 11.5.1; Node LTS ships 10.x.
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync package version to the release tag
+        # The auto-release workflow pushes the next tag without bumping
+        # package.json. Derive the version from the tag so npm stays in lock-step
+        # with GitHub releases; --allow-same-version keeps it idempotent.
+        if: github.event.release.tag_name != ''
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          echo "Release tag: ${TAG} -> version ${VERSION}"
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Publish to npm (Trusted Publishing OIDC, token fallback)
+        # Two auth modes:
+        #   1. OIDC (no NPM_TOKEN): npm exchanges the GitHub OIDC token for a
+        #      short-lived publish token and generates provenance automatically.
+        #   2. Token fallback (NPM_TOKEN set): classic token auth.
+        # actions/setup-node always writes `//registry/:_authToken=${NODE_AUTH_TOKEN}`
+        # into the userconfig .npmrc. With an empty token that line makes npm think
+        # auth is configured and SKIP OIDC (ENEEDAUTH), so in OIDC mode we strip it.
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "npm version: $(npm --version)"
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "NPM_TOKEN present -> publishing with token auth"
+            NODE_AUTH_TOKEN="${NPM_TOKEN}" npm publish --provenance --access public
+          else
+            echo "No NPM_TOKEN -> publishing via Trusted Publishing (OIDC)"
+            if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
+              sed -i '/_authToken=/d' "${NPM_CONFIG_USERCONFIG}"
+            fi
+            npm publish --access public
+          fi
