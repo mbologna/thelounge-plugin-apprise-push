@@ -1,228 +1,13 @@
 "use strict";
 
-const fs    = require("fs");
-const path  = require("path");
-const http  = require("http");
-const https = require("https");
-const { URL } = require("url");
+const fs = require("fs");
+const path = require("path");
 
-// ── Defaults ───────────────────────────────────────────────────────────────────
-
-const DEFAULTS = {
-  // Required — full Apprise API notify endpoint, e.g. "http://apprise:8000/notify/chatnotifications"
-  apprise_url: "",
-
-  // Notification text — supports {nick}, {channel}, {network}, {message}
-  title_pm:   "PM from {nick} [{network}]",
-  title_chan:  "[{network}] {channel}",
-  body:        "{nick}: {message}",
-  body_length: 100,  // 0 = no truncation
-
-  // Global pre-filters (applied before any rule)
-  away_only:         false,
-  cooldown:          0,      // seconds between notifications per context (0 = disabled)
-  nick_blacklist:    [],     // glob patterns — nicks that never trigger notifications
-  network_blacklist: [],     // glob patterns — network names that never trigger
-  highlight_words:   [],     // extra words/patterns that count as a highlight
-
-  // Ordered rule list — first matching rule wins.
-  // Default: notify on nick highlights and PMs.
-  rules: [
-    { highlight: true },
-    { pm: true },
-  ],
-
-  debug: false,
-};
-
-// ── Wildcard matching ──────────────────────────────────────────────────────────
-
-// Compiles a case-insensitive glob pattern (* = any sequence, ? = any char) to a RegExp.
-// Call once at config load time; reuse the result to avoid per-message recompilation.
-function makeGlobRe(pattern) {
-  return new RegExp(
-    "^" +
-      String(pattern)
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*/g, ".*")
-        .replace(/\?/g, ".") +
-      "$",
-    "i"
-  );
-}
-
-// Returns true if `value` matches any pre-compiled RegExp in `reList`.
-function matchesAny(reList, value) {
-  return reList.some((re) => re.test(value));
-}
-
-// ── Highlight detection ────────────────────────────────────────────────────────
-
-function stripIrcFormatting(str) {
-  return str
-    .replace(/\x03\d{0,2}(,\d{1,2})?/g, "") // color codes
-    .replace(/[\x00-\x1F\x7F]/g, "");         // all other control chars
-}
-
-// Returns true if the message is a highlight: own nick (case-insensitive substring)
-// or a pre-compiled highlight-word pattern.
-function isHighlight(cfg, myNick, message) {
-  if (message.toLowerCase().includes(myNick.toLowerCase())) return true;
-  return cfg.highlightRe.some((re) => re.test(message));
-}
-
-// ── Config loading & compilation ───────────────────────────────────────────────
-
-const VALID_ACTIONS = new Set(["notify", "suppress"]);
-
-// Merges user config with defaults, normalises fields, pre-compiles all glob
-// patterns, validates rule actions, and pre-parses apprise_url — so none of
-// that work happens per-message.
-function compileConfig(raw) {
-  const cfg = { ...DEFAULTS, ...raw };
-
-  // Normalise list fields so callers always get arrays
-  for (const key of ["nick_blacklist", "network_blacklist", "highlight_words"]) {
-    if (!Array.isArray(cfg[key])) cfg[key] = cfg[key] ? [cfg[key]] : [];
-  }
-
-  // Pre-compile glob patterns → RegExp
-  cfg.nickBlacklistRe    = cfg.nick_blacklist.map(makeGlobRe);
-  cfg.networkBlacklistRe = cfg.network_blacklist.map(makeGlobRe);
-  cfg.highlightRe        = cfg.highlight_words.map((w) => makeGlobRe(`*${w}*`));
-
-  // Clone rule objects (avoid mutating DEFAULTS.rules), validate actions,
-  // and pre-compile per-rule glob patterns.
-  cfg.rules = (raw.rules || DEFAULTS.rules).map((r) => {
-    const rule = { ...r };
-    if (rule.action !== undefined && !VALID_ACTIONS.has(rule.action)) {
-      console.warn(`[apprise-push] unknown rule action "${rule.action}" — treated as "notify"`);
-    }
-    if (rule.channel !== undefined) rule._channelRe = [].concat(rule.channel).map(makeGlobRe);
-    if (rule.network !== undefined) rule._networkRe = [].concat(rule.network).map(makeGlobRe);
-    if (rule.nick    !== undefined) rule._nickRe    = [].concat(rule.nick).map(makeGlobRe);
-    return rule;
-  });
-
-  // Pre-parse and validate apprise_url — fail fast at load time, not per-send
-  cfg.parsedUrl = null;
-  if (cfg.apprise_url) {
-    try {
-      cfg.parsedUrl = new URL(cfg.apprise_url);
-    } catch (e) {
-      console.error(`[apprise-push] invalid apprise_url: ${e.message}`);
-    }
-  }
-
-  return cfg;
-}
-
-// ── Rule matching ──────────────────────────────────────────────────────────────
-
-// A rule is an object whose keys are conditions (all must be true) plus an optional
-// `action` ("notify" | "suppress", default "notify").
-//
-// Conditions:
-//   channel   string|string[]  glob(s) matched against the channel name
-//   pm        true             the message is a private message
-//   highlight true             the message contains a highlight word or own nick
-//   network   string|string[]  glob(s) matched against the network name
-//   nick      string|string[]  glob(s) matched against the sender nick
-//
-// If no conditions are specified the rule matches everything.
-// Pre-compiled RegExp versions are stored in _channelRe / _networkRe / _nickRe.
-
-function matchRule(rule, ctx) {
-  const { isQuery, channel, senderNick, networkName, isHl } = ctx;
-
-  // `channel` — only channel messages in matching channels
-  if (rule._channelRe !== undefined) {
-    if (isQuery || !matchesAny(rule._channelRe, channel)) return false;
-  }
-
-  // `pm` — only private messages
-  if (rule.pm === true  && !isQuery) return false;
-  if (rule.pm === false &&  isQuery) return false;
-
-  // `highlight` — must be a highlight
-  if (rule.highlight === true && !isHl) return false;
-
-  // `network`
-  if (rule._networkRe !== undefined && !matchesAny(rule._networkRe, networkName)) return false;
-
-  // `nick` — sender nick
-  if (rule._nickRe !== undefined && !matchesAny(rule._nickRe, senderNick)) return false;
-
-  return true;
-}
-
-// Runs global pre-filters then evaluates the rule list.
-// Returns "notify" | "suppress" | "skip".
-function evaluate(cfg, ctx, lastNotified) {
-  const { senderNick, networkName, clientKey, now, attachedCount } = ctx;
-
-  // Global pre-filters
-  if (cfg.away_only && attachedCount > 0) return "skip";
-  if (matchesAny(cfg.nickBlacklistRe,    senderNick))  return "skip";
-  if (matchesAny(cfg.networkBlacklistRe, networkName)) return "skip";
-
-  // Per-context cooldown
-  if (cfg.cooldown > 0) {
-    const last = lastNotified.get(clientKey) || 0;
-    if (now - last < cfg.cooldown) return "skip";
-  }
-
-  // Rule list (first match wins)
-  for (const rule of cfg.rules) {
-    if (matchRule(rule, ctx)) {
-      return rule.action === "suppress" ? "suppress" : "notify";
-    }
-  }
-
-  return "skip"; // no rule matched
-}
-
-// ── Keyword expansion ──────────────────────────────────────────────────────────
-
-function expand(template, vars) {
-  return template.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : `{${k}}`));
-}
-
-function truncate(str, maxLen) {
-  if (!maxLen || str.length <= maxLen) return str;
-  return str.slice(0, maxLen - 1) + "…";
-}
-
-// ── Apprise HTTP API ───────────────────────────────────────────────────────────
-
-function sendApprise(cfg, title, body) {
-  const parsed = cfg.parsedUrl;
-  if (!parsed) return; // invalid URL already logged at compile time
-
-  const payload = Buffer.from(JSON.stringify({ title, body }));
-
-  const options = {
-    hostname: parsed.hostname,
-    port:     parsed.port || (parsed.protocol === "https:" ? 443 : 80),
-    path:     parsed.pathname + parsed.search,
-    method:   "POST",
-    headers: {
-      "Content-Type":   "application/json",
-      "Content-Length": payload.length,
-    },
-  };
-
-  const transport = parsed.protocol === "https:" ? https : http;
-  const req = transport.request(options, (res) => {
-    if (cfg.debug) console.log(`[apprise-push] Apprise → HTTP ${res.statusCode}`);
-  });
-  // Destroy the socket after 10 s to avoid connections piling up when Apprise is slow/down
-  req.setTimeout(10_000, () => req.destroy(new Error("request timeout")));
-  req.on("error", (e) =>
-    console.error(`[apprise-push] Apprise request failed: ${e.message}`)
-  );
-  req.end(payload);
-}
+const { compileConfig } = require("./lib/config");
+const { stripIrcFormatting, isHighlight } = require("./lib/highlight");
+const { evaluate } = require("./lib/rules");
+const { expand, truncate } = require("./lib/template");
+const { sendApprise } = require("./lib/apprise");
 
 // ── Message handler factory ────────────────────────────────────────────────────
 
@@ -236,11 +21,11 @@ function makeHandler(getCfg, lastNotified) {
     if (!myNick) return;
     if (senderNick.toLowerCase() === myNick.toLowerCase()) return;
 
-    const networkName  = network.name || network.host || "IRC";
+    const networkName = network.name || network.host || "IRC";
     const cleanMessage = stripIrcFormatting(rawMessage);
-    const now          = Math.floor(Date.now() / 1000);
+    const now = Math.floor(Date.now() / 1000);
     // Key for cooldown: scoped to client+network+context so channels/PMs track independently
-    const clientKey    = `${client.name}:${networkName}:${target}`;
+    const clientKey = `${client.name}:${networkName}:${target}`;
 
     const attached = client.attachedClients;
     const attachedCount =
@@ -248,7 +33,7 @@ function makeHandler(getCfg, lastNotified) {
 
     const ctx = {
       isQuery,
-      channel:     target,
+      channel: target,
       senderNick,
       networkName,
       isHl: isHighlight(cfg, myNick, cleanMessage),
@@ -257,24 +42,30 @@ function makeHandler(getCfg, lastNotified) {
       attachedCount,
     };
 
-    const decision = evaluate(cfg, ctx, lastNotified);
+    const { decision, rule } = evaluate(cfg, ctx, lastNotified);
     if (cfg.debug) {
       console.log(
         `[apprise-push] ${isQuery ? "PM" : "chan"} "${target}" from "${senderNick}"` +
-        ` hl=${ctx.isHl} → ${decision}`
+          ` hl=${ctx.isHl} → ${decision}`
       );
     }
     if (decision !== "notify") return;
 
     const vars = {
       channel: target,
-      nick:    senderNick,
+      nick: senderNick,
       network: networkName,
+      mynick: myNick,
+      time: new Date().toLocaleTimeString(),
       message: truncate(cleanMessage, cfg.body_length),
     };
 
-    const title = expand(isQuery ? cfg.title_pm : cfg.title_chan, vars);
-    const body  = expand(cfg.body, vars);
+    // Per-rule template overrides fall back to the global templates.
+    const titleTpl = rule.title ?? (isQuery ? cfg.title_pm : cfg.title_chan);
+    const bodyTpl = rule.body ?? cfg.body;
+
+    const title = expand(titleTpl, vars);
+    const body = expand(bodyTpl, vars);
 
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
 
@@ -302,13 +93,17 @@ function setupNetworkHook(handle, getCfg) {
   );
 
   if (!networkModPath) {
-    console.error("[apprise-push] network.js not found in module cache — plugin inactive");
+    console.error(
+      "[apprise-push] network.js not found in module cache — plugin inactive"
+    );
     return false;
   }
 
   const Network = require(networkModPath).default;
   if (!Network?.prototype?.createIrcFramework) {
-    console.error("[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive");
+    console.error(
+      "[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive"
+    );
     return false;
   }
 
@@ -327,19 +122,18 @@ function setupNetworkHook(handle, getCfg) {
     // event.type: "privmsg" | "action" | "notice"
     // event.from_server: true for server-generated messages (skip those)
     network.irc.on("message", (event) => {
-      if (event.from_server)       return;
+      if (event.from_server) return;
       if (event.type === "notice") return;
 
       const isQuery = !event.target.startsWith("#");
       handle({
         client,
         network,
-        target:     isQuery ? event.nick : event.target,
+        target: isQuery ? event.nick : event.target,
         senderNick: event.nick,
         // Prefix /me actions so they read naturally: "* nick waves"
-        rawMessage: event.type === "action"
-          ? `* ${event.nick} ${event.message}`
-          : event.message,
+        rawMessage:
+          event.type === "action" ? `* ${event.nick} ${event.message}` : event.message,
         isQuery,
       });
     });
@@ -354,7 +148,7 @@ function setupNetworkHook(handle, getCfg) {
 
 // ── Plugin entry point ─────────────────────────────────────────────────────────
 
-module.exports.onServerStart = (server) => {
+module.exports.onServerStart = () => {
   const tlHome = process.env.THELOUNGE_HOME || path.join(process.env.HOME, ".thelounge");
   const cfgPath = path.join(tlHome, "apprise-push.json");
 
@@ -399,10 +193,16 @@ module.exports.onServerStart = (server) => {
             : "[apprise-push] config reloaded — apprise_url unset, notifications disabled"
         );
       } catch (e) {
-        console.error(`[apprise-push] config reload failed: ${e.message} — keeping previous config`);
+        console.error(
+          `[apprise-push] config reload failed: ${e.message} — keeping previous config`
+        );
       }
     }, 200);
   });
 
   console.log("[apprise-push] started");
 };
+
+// Exported for tests / programmatic use.
+module.exports.makeHandler = makeHandler;
+module.exports.setupNetworkHook = setupNetworkHook;

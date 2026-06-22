@@ -1,21 +1,25 @@
 {
   "apprise_url": "http://apprise:8000/notify/chatnotifications",
 
-  "title_pm":   "PM from {nick} [{network}]",
-  "title_chan":  "[{network}] {channel}",
-  "body":        "{nick}: {message}",
+  "apprise_token": "",
+  "apprise_headers": {},
+
+  "timeout": 10000,
+  "retries": 2,
+  "retry_delay": 500,
+
+  "title_pm": "PM from {nick} [{network}]",
+  "title_chan": "[{network}] {channel}",
+  "body": "{nick}: {message}",
   "body_length": 100,
 
-  "away_only":         false,
-  "cooldown":          0,
-  "nick_blacklist":    ["*bot*", "ChanServ", "NickServ"],
+  "away_only": false,
+  "cooldown": 0,
+  "nick_blacklist": ["*bot*", "ChanServ", "NickServ"],
   "network_blacklist": [],
-  "highlight_words":   [],
+  "highlight_words": [],
 
-  "rules": [
-    { "highlight": true },
-    { "pm": true }
-  ],
+  "rules": [{ "highlight": true }, { "pm": true }],
 
   "debug": false
 }

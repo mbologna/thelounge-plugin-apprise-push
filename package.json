@@ -1,10 +1,10 @@
 {
   "name": "thelounge-plugin-apprise-push",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "TheLounge server plugin: push notifications via Apprise HTTP API",
   "main": "index.js",
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   },
   "thelounge": {
     "supports": ">=4.0.0"
@@ -14,7 +14,8 @@
     "thelounge-plugin",
     "apprise",
     "notifications",
-    "push"
+    "push",
+    "irc"
   ],
   "license": "MIT",
   "author": "Michele Bologna",
@@ -28,9 +29,19 @@
   },
   "files": [
     "index.js",
+    "lib/",
     "apprise-push.example.json"
   ],
   "scripts": {
-    "test": "node -e \"process.exit(0)\""
+    "test": "node --test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3"
   }
 }
