@@ -77,5 +77,5 @@ jobs:
             if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
               sed -i '/_authToken=/d' "${NPM_CONFIG_USERCONFIG}"
             fi
-            npm publish --access public
+            npm publish --access public --loglevel verbose
           fi
