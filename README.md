@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/thelounge-plugin-apprise-push.svg)](https://www.npmjs.com/package/thelounge-plugin-apprise-push)
 [![CI](https://github.com/mbologna/thelounge-plugin-apprise-push/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/thelounge-plugin-apprise-push/actions/workflows/ci.yml)
+[![npm downloads](https://img.shields.io/npm/dm/thelounge-plugin-apprise-push.svg)](https://www.npmjs.com/package/thelounge-plugin-apprise-push)
 [![license](https://img.shields.io/npm/l/thelounge-plugin-apprise-push.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/thelounge-plugin-apprise-push.svg)](package.json)
 
@@ -46,6 +47,7 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 - [Debugging](#debugging)
 - [Notes](#notes)
 - [Development](#development)
+- [Related](#related)
 - [License](#license)
 
 ---
@@ -345,6 +347,15 @@ The codebase is split into small, individually-tested modules under [`lib/`](lib
 `config.js` (defaults, glob compilation, validation), `highlight.js`, `rules.js` (rule
 engine), `template.js` (placeholder expansion), and `apprise.js` (HTTP delivery).
 [`index.js`](index.js) wires them into TheLounge.
+
+---
+
+## Related
+
+Part of a small family of TheLounge add-ons by [@mbologna](https://github.com/mbologna):
+
+- 🔔 **[thelounge-plugin-apprise-push](https://github.com/mbologna/thelounge-plugin-apprise-push)** — push notifications via Apprise (this project)
+- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)** — warm, editorial light/dark theme
 
 ---
 

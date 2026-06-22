@@ -1,2 +1,9 @@
 .github/
 .claude/
+.editorconfig
+.prettierrc.json
+eslint.config.js
+test/
+*.png
+*.jpg
+*.gif
