@@ -18,15 +18,15 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 
 ## Features
 
-- 🔔 **Highlights & PMs** out of the box — fully customisable via an ordered rule engine.
+- 🔔 **Highlights & PMs** out of the box, fully customisable via an ordered rule engine.
 - 🧩 **Rule engine** with glob matching on channel, network, sender nick; `notify` /
   `suppress` actions; first-match-wins ordering.
-- ✍️ **Per-rule message templates** — override the title/body for specific rules.
-- 🔐 **Apprise authentication** — bearer token or arbitrary custom headers.
+- ✍️ **Per-rule message templates** to override the title/body for specific rules.
+- 🔐 **Apprise authentication** with a bearer token or arbitrary custom headers.
 - 🔁 **Retry with exponential backoff** and a configurable request timeout.
 - 😴 **Away-only mode**, per-context **cooldown**, nick/network **blacklists**, and extra
   **highlight words**.
-- ♻️ **Hot-reload** — edit the config and changes apply within a second; no restart.
+- ♻️ **Hot-reload**: edit the config and changes apply within a second; no restart.
 - 🪶 **Zero runtime dependencies**, single small codebase, fully unit-tested.
 
 ---
@@ -97,7 +97,7 @@ Optional. Use these when your Apprise API sits behind auth or a reverse proxy.
 
 | Key               | Type   | Default | Description                                                                |
 | ----------------- | ------ | ------- | -------------------------------------------------------------------------- |
-| `apprise_token`   | string | `""`    | Shorthand — sent as `Authorization: Bearer <token>`.                       |
+| `apprise_token`   | string | `""`    | Shorthand, sent as `Authorization: Bearer <token>`.                        |
 | `apprise_headers` | object | `{}`    | Arbitrary extra HTTP headers. Overrides the bearer header on key conflict. |
 
 ```json
@@ -354,8 +354,8 @@ engine), `template.js` (placeholder expansion), and `apprise.js` (HTTP delivery)
 
 Part of a small family of TheLounge add-ons by [@mbologna](https://github.com/mbologna):
 
-- 🔔 **[thelounge-plugin-apprise-push](https://github.com/mbologna/thelounge-plugin-apprise-push)** — push notifications via Apprise (this project)
-- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)** — warm, editorial light/dark theme
+- 🔔 **[thelounge-plugin-apprise-push](https://github.com/mbologna/thelounge-plugin-apprise-push)**: push notifications via Apprise (this project)
+- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)**: a warm, editorial light/dark theme
 
 ---
 
