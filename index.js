@@ -14,7 +14,7 @@ const { sendApprise } = require("./lib/apprise");
 // Accepts a `getCfg` getter so hot-reloaded config is always picked up without
 // re-registering the irc-framework event listener.
 function makeHandler(getCfg, lastNotified) {
-  return function handle({ client, network, target, senderNick, rawMessage, isQuery }) {
+  return function handle({ client, network, target, senderNick, rawMessage, isQuery, messageType }) {
     const cfg = getCfg();
 
     const myNick = network.irc?.user?.nick || network.nick || "";
@@ -36,17 +36,20 @@ function makeHandler(getCfg, lastNotified) {
       channel: target,
       senderNick,
       networkName,
+      cleanMessage,
+      messageType,
       isHl: isHighlight(cfg, myNick, cleanMessage),
       now,
       clientKey,
       attachedCount,
     };
 
-    const { decision, rule } = evaluate(cfg, ctx, lastNotified);
+    const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified);
     if (cfg.debug) {
+      const label = decision === "notify" ? decision : `${decision} (${reason})`;
       console.log(
         `[apprise-push] ${isQuery ? "PM" : "chan"} "${target}" from "${senderNick}"` +
-          ` hl=${ctx.isHl} → ${decision}`
+          ` hl=${ctx.isHl} → ${label}`
       );
     }
     if (decision !== "notify") return;
@@ -56,7 +59,9 @@ function makeHandler(getCfg, lastNotified) {
       nick: senderNick,
       network: networkName,
       mynick: myNick,
-      time: new Date().toLocaleTimeString(),
+      time: cfg.timezone
+        ? new Date().toLocaleTimeString(undefined, { timeZone: cfg.timezone })
+        : new Date().toLocaleTimeString(),
       message: truncate(cleanMessage, cfg.body_length),
     };
 
@@ -69,10 +74,12 @@ function makeHandler(getCfg, lastNotified) {
 
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
 
-    sendApprise(cfg, title, body);
+    const priority = rule.priority ?? cfg.priority ?? null;
+    sendApprise(cfg, title, body, priority);
     // Only track timestamps when cooldown is active — avoids unbounded Map growth
     // when cooldown=0 (entries would be written but never read)
-    if (cfg.cooldown > 0) lastNotified.set(clientKey, now);
+    const effectiveCooldown = rule.cooldown ?? cfg.cooldown;
+    if (effectiveCooldown > 0) lastNotified.set(clientKey, now);
   };
 }
 
@@ -135,6 +142,7 @@ function setupNetworkHook(handle, getCfg) {
         rawMessage:
           event.type === "action" ? `* ${event.nick} ${event.message}` : event.message,
         isQuery,
+        messageType: event.type, // "privmsg" or "action"
       });
     });
 

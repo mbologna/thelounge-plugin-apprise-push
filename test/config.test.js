@@ -88,3 +88,90 @@ test("compileConfig warns on non-array rules and falls back to defaults", () => 
   assert.ok(warnings.some((w) => w.includes("rules")));
   assert.equal(c.rules.length, DEFAULTS.rules.length);
 });
+
+test("compileConfig compiles contains glob patterns on rules", () => {
+  const c = cfg({ rules: [{ contains: ["critical", "down*"] }] });
+  assert.equal(c.rules[0]._containsRe.length, 2);
+  // Both patterns are wrapped in *...* so they match anywhere in the string
+  assert.ok(c.rules[0]._containsRe[0].test("system critical failure"));
+  assert.ok(c.rules[0]._containsRe[1].test("service is down now"));
+});
+
+test("compileConfig coerces per-rule cooldown", () => {
+  const c = cfg({ rules: [{ cooldown: "30" }, { cooldown: -10 }] });
+  assert.equal(c.rules[0].cooldown, 0); // non-number falls back to cfg.cooldown (0), then clamped
+  assert.equal(c.rules[1].cooldown, 0); // negative clamped to 0
+});
+
+test("compileConfig warns on invalid priority string", () => {
+  const warnings = [];
+  compileConfig({ priority: "urgent" }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("priority")));
+});
+
+test("compileConfig does not warn on valid priority values", () => {
+  const warnings = [];
+  compileConfig({ priority: "high" }, (m) => warnings.push(m));
+  compileConfig({ priority: 1 }, (m) => warnings.push(m));
+  compileConfig({ priority: null }, (m) => warnings.push(m));
+  assert.ok(!warnings.some((w) => w.includes("priority")));
+});
+
+test("compileConfig warns on invalid IANA timezone", () => {
+  const warnings = [];
+  compileConfig({ timezone: "Not/ATimezone" }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("timezone")));
+});
+
+test("compileConfig does not warn on valid IANA timezone", () => {
+  const warnings = [];
+  compileConfig({ timezone: "America/New_York" }, (m) => warnings.push(m));
+  assert.ok(!warnings.some((w) => w.includes("timezone")));
+});
+
+test("compileConfig clears invalid timezone to empty string (crash prevention)", () => {
+  const c = cfg({ timezone: "Not/ATimezone" });
+  assert.equal(c.timezone, "");
+});
+
+test("compileConfig preserves valid timezone", () => {
+  const c = cfg({ timezone: "Europe/Berlin" });
+  assert.equal(c.timezone, "Europe/Berlin");
+});
+
+test("compileConfig clamps negative cooldown to 0", () => {
+  const c = cfg({ cooldown: -60 });
+  assert.equal(c.cooldown, 0);
+});
+
+test("compileConfig warns on negative cooldown", () => {
+  const warnings = [];
+  compileConfig({ cooldown: -60 }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("cooldown")));
+});
+
+test("compileConfig warns on very low timeout", () => {
+  const warnings = [];
+  compileConfig({ timeout: 50 }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("timeout")));
+});
+
+test("compileConfig warns on invalid per-rule priority and resets to null", () => {
+  const warnings = [];
+  const c = compileConfig({ rules: [{ priority: "urgent" }] }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("priority")));
+  assert.equal(c.rules[0].priority, null);
+});
+
+test("compileConfig warns on invalid per-rule message_type and drops the field", () => {
+  const warnings = [];
+  const c = compileConfig({ rules: [{ message_type: "notice" }] }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("message_type")));
+  assert.equal(c.rules[0].message_type, undefined);
+});
+
+test("compileConfig accepts valid per-rule message_type", () => {
+  const c = cfg({ rules: [{ message_type: "privmsg" }, { message_type: "action" }] });
+  assert.equal(c.rules[0].message_type, "privmsg");
+  assert.equal(c.rules[1].message_type, "action");
+});

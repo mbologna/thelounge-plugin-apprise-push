@@ -96,3 +96,44 @@ test("sendApprise is a no-op when apprise_url is invalid", async () => {
   await sendApprise(cfg, "t", "b"); // must resolve without throwing
   assert.equal(cfg.parsedUrl, null);
 });
+
+test("sendApprise includes priority in payload when set", async () => {
+  const { server, received, url } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  await sendApprise(cfgFor(url), "Title", "Body", "high");
+  server.close();
+
+  const parsed = JSON.parse(received[0].body);
+  assert.equal(parsed.priority, "high");
+});
+
+test("sendApprise sends User-Agent header", async () => {
+  const { server, received, url } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  await sendApprise(cfgFor(url), "t", "b");
+  server.close();
+
+  assert.ok(
+    received[0].headers["user-agent"].startsWith("thelounge-plugin-apprise-push/"),
+    "User-Agent should start with package name"
+  );
+});
+
+test("sendApprise omits priority from payload when null", async () => {
+  const { server, received, url } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  await sendApprise(cfgFor(url), "Title", "Body", null);
+  server.close();
+
+  const parsed = JSON.parse(received[0].body);
+  assert.equal(Object.hasOwn(parsed, "priority"), false);
+});
