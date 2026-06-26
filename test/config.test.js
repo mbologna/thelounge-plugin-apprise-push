@@ -139,6 +139,18 @@ test("compileConfig preserves valid timezone", () => {
   assert.equal(c.timezone, "Europe/Berlin");
 });
 
+test("compileConfig warns when apprise_url has no path", () => {
+  const warnings = [];
+  compileConfig({ apprise_url: "http://apprise:8000" }, (m) => warnings.push(m));
+  assert.ok(warnings.some((w) => w.includes("no path")));
+});
+
+test("compileConfig does not warn when apprise_url has a real path", () => {
+  const warnings = [];
+  compileConfig({ apprise_url: "http://apprise:8000/notify/key" }, (m) => warnings.push(m));
+  assert.ok(!warnings.some((w) => w.includes("no path")));
+});
+
 test("compileConfig clamps negative cooldown to 0", () => {
   const c = cfg({ cooldown: -60 });
   assert.equal(c.cooldown, 0);
