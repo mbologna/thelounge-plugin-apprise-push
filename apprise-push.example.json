@@ -19,7 +19,13 @@
   "network_blacklist": [],
   "highlight_words": [],
 
-  "rules": [{ "highlight": true }, { "pm": true }],
+  "priority": null,
+  "timezone": "",
+
+  "rules": [
+    { "highlight": true },
+    { "pm": true }
+  ],
 
   "debug": false
 }

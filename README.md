@@ -19,13 +19,15 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 ## Features
 
 - 🔔 **Highlights & PMs** out of the box, fully customisable via an ordered rule engine.
-- 🧩 **Rule engine** with glob matching on channel, network, sender nick; `notify` /
-  `suppress` actions; first-match-wins ordering.
-- ✍️ **Per-rule message templates** to override the title/body for specific rules.
+- 🧩 **Rule engine** with glob matching on channel, network, sender nick, and **message
+  content** (`contains`); `notify` / `suppress` actions; first-match-wins ordering.
+- ✍️ **Per-rule overrides** for title, body, cooldown, and notification priority.
+- 🔔 **Notification priority** support for services that honour it (Pushover, ntfy, Gotify …).
 - 🔐 **Apprise authentication** with a bearer token or arbitrary custom headers.
 - 🔁 **Retry with exponential backoff** and a configurable request timeout.
 - 😴 **Away-only mode**, per-context **cooldown**, nick/network **blacklists**, and extra
   **highlight words**.
+- 🌍 **Configurable timezone** for the `{time}` placeholder.
 - ♻️ **Hot-reload**: edit the config and changes apply within a second; no restart.
 - 🪶 **Zero runtime dependencies**, single small codebase, fully unit-tested.
 
@@ -88,8 +90,9 @@ All options go in `$THELOUNGE_HOME/apprise-push.json` (usually `~/.thelounge/app
 | ------------- | ------ | --------------------------------------------------------------------------------------- |
 | `apprise_url` | string | Full Apprise API notify endpoint, e.g. `"http://apprise:8000/notify/chatnotifications"` |
 
-The plugin POSTs `{ "title": "...", "body": "..." }` to this URL. The notification
-destinations are configured server-side in Apprise under the given key.
+The plugin POSTs `{ "title": "...", "body": "..." }` (plus an optional `"priority"` field)
+to this URL. The notification destinations are configured server-side in Apprise under the
+given key.
 
 ### Authentication
 
@@ -114,24 +117,26 @@ Optional. Use these when your Apprise API sits behind auth or a reverse proxy.
 
 ### Notification text
 
-| Key           | Default                        | Description                                                    |
-| ------------- | ------------------------------ | -------------------------------------------------------------- |
-| `title_pm`    | `"PM from {nick} [{network}]"` | Title for private message notifications.                       |
-| `title_chan`  | `"[{network}] {channel}"`      | Title for channel notifications.                               |
-| `body`        | `"{nick}: {message}"`          | Notification body.                                             |
-| `body_length` | `100`                          | Truncate `{message}` to this many characters. `0` = unlimited. |
+| Key           | Default                        | Description                                                                                           |
+| ------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `title_pm`    | `"PM from {nick} [{network}]"` | Title template for private message notifications.                                                     |
+| `title_chan`  | `"[{network}] {channel}"`      | Title template for channel notifications.                                                             |
+| `body`        | `"{nick}: {message}"`          | Notification body template.                                                                           |
+| `body_length` | `100`                          | Truncate `{message}` to this many characters. `0` = unlimited.                                        |
+| `priority`    | `null`                         | Notification priority passed to Apprise. `null` = omit. Accepts a number or `"min"` / `"low"` / `"normal"` / `"high"` / `"max"`. Honoured by Pushover, ntfy, Gotify and others. |
+| `timezone`    | `""`                           | IANA timezone name for the `{time}` placeholder, e.g. `"America/New_York"`. Empty = system timezone. |
 
 **Keyword expansion**: these placeholders are replaced in `title_pm`, `title_chan`, `body`,
 and per-rule `title`/`body` overrides:
 
-| Keyword     | Value                                                              |
-| ----------- | ------------------------------------------------------------------ |
-| `{channel}` | Channel name or sender nick (for PMs)                              |
-| `{nick}`    | Message sender                                                     |
-| `{network}` | IRC network name                                                   |
-| `{mynick}`  | Your own nick on that network                                      |
-| `{time}`    | Local time the message was received                                |
-| `{message}` | Message text (IRC formatting stripped, truncated to `body_length`) |
+| Keyword     | Value                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| `{channel}` | Channel name or sender nick (for PMs)                                                    |
+| `{nick}`    | Message sender                                                                           |
+| `{network}` | IRC network name                                                                         |
+| `{mynick}`  | Your own nick on that network                                                            |
+| `{time}`    | Time the message was received (IANA timezone from `timezone` config, or system timezone) |
+| `{message}` | Message text (IRC formatting stripped, truncated to `body_length`)                       |
 
 ### Global pre-filters
 
@@ -159,6 +164,8 @@ no conditions it matches everything.
 
 #### Rule conditions
 
+All conditions are AND'd together. A rule with no conditions matches every message.
+
 | Key         | Type               | Description                                                                                                 |
 | ----------- | ------------------ | ----------------------------------------------------------------------------------------------------------- |
 | `channel`   | string \| string[] | Glob pattern(s) for the channel name. If set, the rule only matches channel messages in a matching channel. |
@@ -166,16 +173,24 @@ no conditions it matches everything.
 | `highlight` | boolean            | `true` → only match if the message contains your nick or a `highlight_words` entry.                         |
 | `network`   | string \| string[] | Glob pattern(s) for the network name.                                                                       |
 | `nick`      | string \| string[] | Glob pattern(s) for the **sender** nick.                                                                    |
+| `contains`    | string \| string[] | Glob pattern(s) matched against the message text (after stripping IRC formatting). Any one pattern matching is sufficient. E.g. `["*deploy*", "*alert*"]`. Note: patterns are substring-matched — `"*down*"` matches "shutdown" and "password". |
+| `message_type` | string            | `"privmsg"` to match only regular messages, `"action"` to match only `/me` actions. Omit to match both. |
 
 #### Rule action & overrides
 
-| Key      | Default    | Description                                                                       |
-| -------- | ---------- | --------------------------------------------------------------------------------- |
-| `action` | `"notify"` | `"notify"` sends a notification. `"suppress"` blocks and stops evaluation.        |
-| `title`  | _(global)_ | Override the title template for this rule. Falls back to `title_pm`/`title_chan`. |
-| `body`   | _(global)_ | Override the body template for this rule. Falls back to `body`.                   |
+| Key        | Default    | Description                                                                                                                   |
+| ---------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `action`   | `"notify"` | `"notify"` sends a notification. `"suppress"` blocks further evaluation and sends nothing.                                    |
+| `title`    | _(global)_ | Override the title template for this rule. Omit to fall back to `title_pm` (PMs) or `title_chan` (channels).                  |
+| `body`     | _(global)_ | Override the body template for this rule. Omit to fall back to the global `body`.                                             |
+| `cooldown` | _(global)_ | Per-rule cooldown in seconds. Overrides the global `cooldown` for messages matched by this rule. Use `0` to always notify. The timer resets on each sent notification; skipped messages do not reset it. |
+| `priority` | _(global)_ | Per-rule priority. Overrides the global `priority` for this rule. Same values as the global `priority` field. |
 
 Glob patterns support `*` (any sequence) and `?` (any single character), case-insensitive.
+
+> **Rule ordering tip:** Put `suppress` rules before catch-all `notify` rules. Specific
+> conditions before broad ones. Global pre-filters (`away_only`, blacklists) always run first
+> regardless of rule order.
 
 ---
 
@@ -275,6 +290,55 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 
 `prod*` will match "production", "prod-alert", etc.
 
+### Keyword alerts in a channel
+
+```json
+"rules": [
+  { "channel": "#ops", "contains": ["*down*", "*alert*", "deploy*"] },
+  { "highlight": true },
+  { "pm": true }
+]
+```
+
+Sends a notification whenever `#ops` has a message containing "down", "alert", or starting with "deploy", in addition to the usual highlights and PMs.
+
+### Per-rule cooldown: silence a noisy channel, never suppress PMs
+
+```json
+"rules": [
+  { "pm": true, "cooldown": 0 },
+  { "channel": "#general", "highlight": true, "cooldown": 300 },
+  { "highlight": true }
+]
+```
+
+PMs are always delivered immediately. Highlights in `#general` are throttled to one every 5 minutes. Other highlights use the global `cooldown`.
+
+### Filter by message type
+
+```json
+"rules": [
+  { "channel": "#dev", "message_type": "action" },
+  { "highlight": true },
+  { "pm": true }
+]
+```
+
+Only `/me` actions in `#dev` trigger a notification (e.g. `* alice pushes to main`), not regular messages. Highlights and PMs still work as normal.
+
+### Priority notifications for critical channels
+
+```json
+"priority": "low",
+"rules": [
+  { "channel": "#incidents", "contains": "*CRITICAL*", "priority": "high" },
+  { "highlight": true },
+  { "pm": true }
+]
+```
+
+All notifications default to low priority, but messages in `#incidents` that contain "CRITICAL" are sent at high priority.
+
 ### Authenticated Apprise behind a proxy
 
 ```json
@@ -311,7 +375,24 @@ TheLounge's stdout:
 [apprise-push] chan "#dev" from "alice" hl=true → notify
 [apprise-push] → "[Libera] #dev" / "alice: hey yourname, take a look"
 [apprise-push] Apprise → HTTP 200
+
+[apprise-push] chan "#general" from "bob" hl=false → skip (cooldown)
+[apprise-push] chan "#random" from "eve" hl=false → skip (no_match)
+[apprise-push] PM "dave" from "dave" hl=false → skip (away_only)
+[apprise-push] chan "#spam" from "bot" hl=false → suppress (suppress)
 ```
+
+Possible outcomes and their meanings:
+
+| Output | Meaning |
+|---|---|
+| `→ notify` | A rule matched and a notification was sent |
+| `→ skip (away_only)` | `away_only: true` and a browser tab is connected |
+| `→ skip (nick_blacklist)` | Sender matched a `nick_blacklist` pattern |
+| `→ skip (network_blacklist)` | Network matched a `network_blacklist` pattern |
+| `→ skip (cooldown)` | Within the cooldown window for this context |
+| `→ skip (no_match)` | No rule matched — message was silently dropped |
+| `→ suppress (suppress)` | A rule with `action: "suppress"` matched |
 
 Unknown config keys and bad value types are also reported as warnings at load time.
 
@@ -334,6 +415,32 @@ Unknown config keys and bad value types are also reported as warnings at load ti
 
 ---
 
+## Troubleshooting
+
+**No notifications at all**
+1. Set `"debug": true` — check that messages are reaching the plugin and what decision is being logged.
+2. Verify `apprise_url` is reachable from the server: `curl -X POST <apprise_url> -H "Content-Type: application/json" -d '{"title":"test","body":"test"}'`.
+3. Check TheLounge logs at startup for `[apprise-push] started` — if absent, the config file was not found or failed to parse.
+4. If you see `→ skip (no_match)`, your rules don't match. The default rules only notify on highlights and PMs; add a broader rule if needed.
+
+**Notifications fire but `{time}` shows the wrong timezone**
+- Set `"timezone": "Your/Timezone"` using an [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Invalid values fall back to the server's system timezone and a warning is logged at load time.
+
+**Notifications stop after a while**
+- If `cooldown` is set, check that enough time has passed. Debug output will show `→ skip (cooldown)`.
+- Cooldown is per-context (per channel and per PM thread) and resets only when a notification is actually sent, not when messages are skipped.
+
+**Hot-reload not working**
+- Some network filesystems and container volume mounts don't deliver `fs.watch` events. In those cases, restart TheLounge after editing the config.
+- If the new config has a JSON syntax error, the previous config is kept and an error is logged.
+
+**Apprise request fails / retries exhausted**
+- Increase `timeout` if your Apprise server is slow to respond.
+- Check Apprise server logs for errors — the plugin logs the HTTP status code on failure.
+- Use `"debug": true` to see individual attempt results.
+
+---
+
 ## Development
 
 ```bash
@@ -352,10 +459,9 @@ engine), `template.js` (placeholder expansion), and `apprise.js` (HTTP delivery)
 
 ## Related
 
-Part of a small family of TheLounge add-ons by [@mbologna](https://github.com/mbologna):
+See also:
 
-- 🔔 **[thelounge-plugin-apprise-push](https://github.com/mbologna/thelounge-plugin-apprise-push)**: push notifications via Apprise (this project)
-- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)**: a warm, editorial light/dark theme
+- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)**: a warm, editorial light/dark theme (automatic light/dark, digest-style messages, pure CSS)
 
 ---
 
