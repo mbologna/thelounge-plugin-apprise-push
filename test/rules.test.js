@@ -107,6 +107,19 @@ test("evaluate cooldown suppresses repeats within the window", () => {
   assert.equal(evaluate(c, baseCtx({ now: 1061 }), last).decision, "notify");
 });
 
+// ── suppress + cooldown ────────────────────────────────────────────────────────
+
+// (The timestamp update for suppress decisions is done in index.js, not in rules.js,
+//  so this test verifies the evaluate return value used by index.js to track state.)
+test("suppress rule returns the matched rule so caller can track cooldown", () => {
+  const c = cfg({ rules: [{ channel: "#spam", action: "suppress", cooldown: 60 }] });
+  const r = evaluate(c, baseCtx({ channel: "#spam", clientKey: "c:Libera:#spam" }), new Map());
+  assert.equal(r.decision, "suppress");
+  // rule must be returned (not null) so index.js can compute effectiveCooldown
+  assert.ok(r.rule !== null);
+  assert.equal(r.rule.cooldown, 60);
+});
+
 // ── message_type condition ─────────────────────────────────────────────────────
 
 test("message_type:privmsg matches only regular messages", () => {

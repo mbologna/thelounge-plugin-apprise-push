@@ -52,6 +52,15 @@ function makeHandler(getCfg, lastNotified) {
           ` hl=${ctx.isHl} → ${label}`
       );
     }
+    // Record cooldown timestamp for both notify and suppress decisions so that a
+    // suppress rule with cooldown actually throttles (otherwise last stays 0 forever
+    // and the cooldown check never fires for suppress rules).
+    // Skip decisions have rule=null (pre-filter exits) — nothing to track.
+    if (rule !== null) {
+      const effectiveCooldown = rule.cooldown ?? cfg.cooldown;
+      if (effectiveCooldown > 0) lastNotified.set(clientKey, now);
+    }
+
     if (decision !== "notify") return;
 
     const vars = {
@@ -76,10 +85,6 @@ function makeHandler(getCfg, lastNotified) {
 
     const priority = rule.priority ?? cfg.priority ?? null;
     sendApprise(cfg, title, body, priority);
-    // Only track timestamps when cooldown is active — avoids unbounded Map growth
-    // when cooldown=0 (entries would be written but never read)
-    const effectiveCooldown = rule.cooldown ?? cfg.cooldown;
-    if (effectiveCooldown > 0) lastNotified.set(clientKey, now);
   };
 }
 
