@@ -24,7 +24,7 @@ jobs:
 
   auto-release:
     if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/auto-release.yml@17b58dc8f640202e9425ad4829f2a70fc1e844ef # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@64ba96e6b7e5d32b120c30baf0db6713e0f87cda # main
     with:
       strategy: commits
     secrets: inherit
