@@ -8,13 +8,37 @@ const { stripIrcFormatting, isHighlight } = require("./lib/highlight");
 const { evaluate } = require("./lib/rules");
 const { expand, truncate } = require("./lib/template");
 const { sendApprise } = require("./lib/apprise");
+const { createDigestManager } = require("./lib/digest");
+const { createMetrics } = require("./lib/metrics");
+const { createMuteState } = require("./lib/mute");
+
+const NOT_MUTED = { isMuted: () => false };
 
 // ── Message handler factory ────────────────────────────────────────────────────
 
 // Accepts a `getCfg` getter so hot-reloaded config is always picked up without
-// re-registering the irc-framework event listener.
-function makeHandler(getCfg, lastNotified) {
-  return function handle({ client, network, target, senderNick, rawMessage, isQuery, messageType }) {
+// re-registering the irc-framework event listener. `notifyLog` is a shared array
+// of notify timestamps used to enforce cfg.max_per_minute across all contexts.
+// `muteState` (from lib/mute.js) silences all notifications on demand; `metrics`
+// (from lib/metrics.js) tracks notified/suppressed/skipped/sendFailed counters.
+function makeHandler(
+  getCfg,
+  lastNotified,
+  notifyLog = [],
+  muteState = NOT_MUTED,
+  metrics = createMetrics()
+) {
+  const digestManager = createDigestManager(sendApprise, notifyLog, metrics);
+
+  return function handle({
+    client,
+    network,
+    target,
+    senderNick,
+    rawMessage,
+    isQuery,
+    messageType,
+  }) {
     const cfg = getCfg();
 
     const myNick = network.irc?.user?.nick || network.nick || "";
@@ -42,9 +66,10 @@ function makeHandler(getCfg, lastNotified) {
       now,
       clientKey,
       attachedCount,
+      muted: muteState.isMuted(now),
     };
 
-    const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified);
+    const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified, notifyLog);
     if (cfg.debug) {
       const label = decision === "notify" ? decision : `${decision} (${reason})`;
       console.log(
@@ -52,6 +77,9 @@ function makeHandler(getCfg, lastNotified) {
           ` hl=${ctx.isHl} → ${label}`
       );
     }
+    if (decision === "notify") metrics.record("notified");
+    else if (decision === "suppress") metrics.record("suppressed");
+    else metrics.record("skipped");
     // Record cooldown timestamp for both notify and suppress decisions so that a
     // suppress rule with cooldown actually throttles (otherwise last stays 0 forever
     // and the cooldown check never fires for suppress rules).
@@ -84,7 +112,31 @@ function makeHandler(getCfg, lastNotified) {
     if (cfg.debug) console.log(`[apprise-push] → "${title}" / "${body}"`);
 
     const priority = rule.priority ?? cfg.priority ?? null;
-    sendApprise(cfg, title, body, priority);
+    const parsedUrl = rule._parsedUrl || cfg.parsedUrl;
+
+    // digest_window (per-rule, falling back to the global default) batches
+    // messages for this context into one notification instead of sending
+    // immediately — useful for busy channels.
+    const digestWindow = rule.digest_window ?? cfg.digest_window;
+    if (digestWindow > 0) {
+      digestManager.enqueue({
+        clientKey,
+        title,
+        bodyLine: body,
+        priority,
+        cfg,
+        parsedUrl,
+        windowSec: digestWindow,
+      });
+    } else {
+      // Count against the global rate limit only when a notification actually
+      // goes out — a digest flush (above) counts itself once, at flush time,
+      // regardless of how many messages it coalesced.
+      if (cfg.max_per_minute > 0) notifyLog.push(now);
+      sendApprise(cfg, title, body, priority, parsedUrl).then((ok) => {
+        if (ok === false) metrics.record("sendFailed");
+      });
+    }
   };
 }
 
@@ -186,10 +238,34 @@ module.exports.onServerStart = () => {
   }
 
   const lastNotified = new Map();
+  const notifyLog = [];
+  const metrics = createMetrics();
+  const mutePath = path.join(tlHome, "apprise-push.mute");
+  const muteState = createMuteState(mutePath);
   const getCfg = () => cfg;
-  const handle = makeHandler(getCfg, lastNotified);
+  const handle = makeHandler(getCfg, lastNotified, notifyLog, muteState, metrics);
 
   if (!setupNetworkHook(handle, getCfg)) return;
+
+  // Mute/snooze: watch the directory (not the file itself — fs.watch can't watch
+  // a path that doesn't exist yet) for apprise-push.mute being created, edited,
+  // or removed. Debounced for the same reason as the config watch below.
+  let muteTimer = null;
+  fs.watch(tlHome, { persistent: false }, (_eventType, filename) => {
+    if (filename !== "apprise-push.mute") return;
+    clearTimeout(muteTimer);
+    muteTimer = setTimeout(() => muteState.refresh(), 200);
+  });
+
+  // Periodic metrics summary — only logged when debug is on, so it costs
+  // nothing in normal operation.
+  const metricsInterval = setInterval(
+    () => {
+      if (getCfg().debug) console.log("[apprise-push] metrics:", metrics.snapshot());
+    },
+    5 * 60 * 1000
+  );
+  metricsInterval.unref?.();
 
   // Hot-reload: recompile config whenever the file changes — no TheLounge restart needed.
   // Debounced (200 ms) because editors often write files in multiple flush events.

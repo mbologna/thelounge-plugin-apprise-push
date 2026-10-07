@@ -3,6 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
+const { URL } = require("node:url");
 
 const { sendApprise } = require("../lib/apprise");
 const { compileConfig } = require("../lib/config");
@@ -123,6 +124,47 @@ test("sendApprise sends User-Agent header", async () => {
     received[0].headers["user-agent"].startsWith("thelounge-plugin-apprise-push/"),
     "User-Agent should start with package name"
   );
+});
+
+test("sendApprise uses overrideUrl when provided instead of cfg.parsedUrl", async () => {
+  const {
+    server: mainServer,
+    received: mainReceived,
+    url: mainUrl,
+  } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+  const {
+    server: altServer,
+    received: altReceived,
+    url: altUrl,
+  } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  const cfg = cfgFor(mainUrl);
+  const overrideUrl = new URL(altUrl);
+  await sendApprise(cfg, "t", "b", null, overrideUrl);
+
+  mainServer.close();
+  altServer.close();
+
+  assert.equal(mainReceived.length, 0, "main endpoint should not receive the request");
+  assert.equal(altReceived.length, 1, "override endpoint should receive the request");
+});
+
+test("sendApprise falls back to cfg.parsedUrl when overrideUrl is not provided", async () => {
+  const { server, received, url } = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+
+  await sendApprise(cfgFor(url), "t", "b", null, null);
+  server.close();
+
+  assert.equal(received.length, 1);
 });
 
 test("sendApprise omits priority from payload when null", async () => {
