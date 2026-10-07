@@ -147,7 +147,9 @@ test("compileConfig warns when apprise_url has no path", () => {
 
 test("compileConfig does not warn when apprise_url has a real path", () => {
   const warnings = [];
-  compileConfig({ apprise_url: "http://apprise:8000/notify/key" }, (m) => warnings.push(m));
+  compileConfig({ apprise_url: "http://apprise:8000/notify/key" }, (m) =>
+    warnings.push(m)
+  );
   assert.ok(!warnings.some((w) => w.includes("no path")));
 });
 
@@ -177,7 +179,9 @@ test("compileConfig warns on invalid per-rule priority and resets to null", () =
 
 test("compileConfig warns on invalid per-rule message_type and drops the field", () => {
   const warnings = [];
-  const c = compileConfig({ rules: [{ message_type: "notice" }] }, (m) => warnings.push(m));
+  const c = compileConfig({ rules: [{ message_type: "notice" }] }, (m) =>
+    warnings.push(m)
+  );
   assert.ok(warnings.some((w) => w.includes("message_type")));
   assert.equal(c.rules[0].message_type, undefined);
 });
@@ -186,4 +190,90 @@ test("compileConfig accepts valid per-rule message_type", () => {
   const c = cfg({ rules: [{ message_type: "privmsg" }, { message_type: "action" }] });
   assert.equal(c.rules[0].message_type, "privmsg");
   assert.equal(c.rules[1].message_type, "action");
+});
+
+// ── Security hardening ───────────────────────────────────────────────────────────
+
+test("compileConfig rejects non-http(s) apprise_url schemes", () => {
+  const warnings = [];
+  const c = compileConfig({ apprise_url: "ftp://host/notify/key" }, (m) =>
+    warnings.push(m)
+  );
+  assert.equal(c.parsedUrl, null);
+  assert.ok(warnings.some((w) => w.includes("http://") && w.includes("https://")));
+});
+
+test("compileConfig accepts https apprise_url", () => {
+  const c = cfg({ apprise_url: "https://host/notify/key" });
+  assert.ok(c.parsedUrl);
+  assert.equal(c.parsedUrl.protocol, "https:");
+});
+
+test("compileConfig warns when a bearer token is used over plaintext http", () => {
+  const warnings = [];
+  compileConfig({ apprise_url: "http://host/notify/key", apprise_token: "secret" }, (m) =>
+    warnings.push(m)
+  );
+  assert.ok(warnings.some((w) => w.includes("plaintext")));
+});
+
+test("compileConfig does not warn about plaintext when using https", () => {
+  const warnings = [];
+  compileConfig(
+    { apprise_url: "https://host/notify/key", apprise_token: "secret" },
+    (m) => warnings.push(m)
+  );
+  assert.ok(!warnings.some((w) => w.includes("plaintext")));
+});
+
+test("compileConfig drops non-string apprise_headers values", () => {
+  const warnings = [];
+  const c = compileConfig({ apprise_headers: { "X-Good": "ok", "X-Bad": 42 } }, (m) =>
+    warnings.push(m)
+  );
+  assert.equal(c.headers["X-Good"], "ok");
+  assert.equal(c.headers["X-Bad"], undefined);
+  assert.ok(warnings.some((w) => w.includes("X-Bad")));
+});
+
+// ── max_per_minute / digest_window ────────────────────────────────────────────────
+
+test("compileConfig defaults max_per_minute and digest_window to 0", () => {
+  const c = cfg({ apprise_url: "http://x/notify/k" });
+  assert.equal(c.max_per_minute, 0);
+  assert.equal(c.digest_window, 0);
+});
+
+test("compileConfig clamps negative max_per_minute and digest_window to 0", () => {
+  const c = cfg({ max_per_minute: -5, digest_window: -5 });
+  assert.equal(c.max_per_minute, 0);
+  assert.equal(c.digest_window, 0);
+});
+
+test("compileConfig coerces per-rule digest_window, falling back to global", () => {
+  const c = cfg({ digest_window: 30, rules: [{ digest_window: 0 }, {}] });
+  assert.equal(c.rules[0].digest_window, 0);
+  assert.equal(c.rules[1].digest_window, undefined); // untouched — index.js applies ?? cfg.digest_window
+});
+
+// ── per-rule apprise_url ──────────────────────────────────────────────────────────
+
+test("compileConfig parses a valid per-rule apprise_url", () => {
+  const c = cfg({ rules: [{ apprise_url: "https://other/notify/k2" }] });
+  assert.ok(c.rules[0]._parsedUrl);
+  assert.equal(c.rules[0]._parsedUrl.hostname, "other");
+});
+
+test("compileConfig rejects an invalid per-rule apprise_url", () => {
+  const warnings = [];
+  const c = compileConfig({ rules: [{ apprise_url: "ftp://other/notify/k2" }] }, (m) =>
+    warnings.push(m)
+  );
+  assert.equal(c.rules[0]._parsedUrl, null);
+  assert.ok(warnings.some((w) => w.includes("rule.apprise_url")));
+});
+
+test("compileConfig leaves rule._parsedUrl null when apprise_url is not set on the rule", () => {
+  const c = cfg({ rules: [{}] });
+  assert.equal(c.rules[0]._parsedUrl, null);
 });

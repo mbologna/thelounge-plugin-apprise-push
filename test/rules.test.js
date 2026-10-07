@@ -113,7 +113,11 @@ test("evaluate cooldown suppresses repeats within the window", () => {
 //  so this test verifies the evaluate return value used by index.js to track state.)
 test("suppress rule returns the matched rule so caller can track cooldown", () => {
   const c = cfg({ rules: [{ channel: "#spam", action: "suppress", cooldown: 60 }] });
-  const r = evaluate(c, baseCtx({ channel: "#spam", clientKey: "c:Libera:#spam" }), new Map());
+  const r = evaluate(
+    c,
+    baseCtx({ channel: "#spam", clientKey: "c:Libera:#spam" }),
+    new Map()
+  );
   assert.equal(r.decision, "suppress");
   // rule must be returned (not null) so index.js can compute effectiveCooldown
   assert.ok(r.rule !== null);
@@ -144,7 +148,10 @@ test("omitting message_type matches both privmsg and action", () => {
 
 test("contains string matches message containing the word", () => {
   const c = cfg({ rules: [{ contains: "critical" }] });
-  assert.equal(matchRule(c.rules[0], baseCtx({ cleanMessage: "system critical failure" })), true);
+  assert.equal(
+    matchRule(c.rules[0], baseCtx({ cleanMessage: "system critical failure" })),
+    true
+  );
   assert.equal(matchRule(c.rules[0], baseCtx({ cleanMessage: "all good" })), false);
 });
 
@@ -152,17 +159,29 @@ test("contains array: any pattern matches (OR logic)", () => {
   const c = cfg({ rules: [{ contains: ["down", "critical"] }] });
   assert.equal(matchRule(c.rules[0], baseCtx({ cleanMessage: "service is down" })), true);
   assert.equal(matchRule(c.rules[0], baseCtx({ cleanMessage: "critical alert" })), true);
-  assert.equal(matchRule(c.rules[0], baseCtx({ cleanMessage: "all systems nominal" })), false);
+  assert.equal(
+    matchRule(c.rules[0], baseCtx({ cleanMessage: "all systems nominal" })),
+    false
+  );
 });
 
 test("contains ANDs with other conditions", () => {
   const c = cfg({ rules: [{ channel: "#ops", contains: "deploy" }] });
   // channel matches, contains matches → true
-  assert.equal(matchRule(c.rules[0], baseCtx({ channel: "#ops", cleanMessage: "deploying now" })), true);
+  assert.equal(
+    matchRule(c.rules[0], baseCtx({ channel: "#ops", cleanMessage: "deploying now" })),
+    true
+  );
   // channel matches, contains does not match → false
-  assert.equal(matchRule(c.rules[0], baseCtx({ channel: "#ops", cleanMessage: "hello" })), false);
+  assert.equal(
+    matchRule(c.rules[0], baseCtx({ channel: "#ops", cleanMessage: "hello" })),
+    false
+  );
   // channel does not match → false
-  assert.equal(matchRule(c.rules[0], baseCtx({ channel: "#dev", cleanMessage: "deploying now" })), false);
+  assert.equal(
+    matchRule(c.rules[0], baseCtx({ channel: "#dev", cleanMessage: "deploying now" })),
+    false
+  );
 });
 
 // ── per-rule cooldown ──────────────────────────────────────────────────────────
@@ -173,7 +192,16 @@ test("per-rule cooldown:0 overrides global cooldown", () => {
   const last = new Map([["c:Libera:alice", 999]]);
   // PM context — should notify despite global cooldown
   assert.equal(
-    evaluate(c, baseCtx({ isQuery: true, channel: "alice", clientKey: "c:Libera:alice", now: 1000 }), last).decision,
+    evaluate(
+      c,
+      baseCtx({
+        isQuery: true,
+        channel: "alice",
+        clientKey: "c:Libera:alice",
+        now: 1000,
+      }),
+      last
+    ).decision,
     "notify"
   );
 });
@@ -183,24 +211,41 @@ test("per-rule cooldown suppresses within its own window", () => {
   const c = cfg({ cooldown: 0, rules: [{ channel: "#general", cooldown: 300 }] });
   const last = new Map([["c:Libera:#general", 900]]);
   assert.equal(
-    evaluate(c, baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1000 }), last).decision,
+    evaluate(
+      c,
+      baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1000 }),
+      last
+    ).decision,
     "skip"
   );
   assert.equal(
-    evaluate(c, baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1201 }), last).decision,
+    evaluate(
+      c,
+      baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1201 }),
+      last
+    ).decision,
     "notify"
   );
 });
 
 test("evaluate includes reason on skip decisions", () => {
   const away = cfg({ away_only: true, rules: [{}] });
-  assert.equal(evaluate(away, baseCtx({ attachedCount: 1 }), new Map()).reason, "away_only");
+  assert.equal(
+    evaluate(away, baseCtx({ attachedCount: 1 }), new Map()).reason,
+    "away_only"
+  );
 
   const nb = cfg({ nick_blacklist: ["*bot*"], rules: [{}] });
-  assert.equal(evaluate(nb, baseCtx({ senderNick: "helperbot" }), new Map()).reason, "nick_blacklist");
+  assert.equal(
+    evaluate(nb, baseCtx({ senderNick: "helperbot" }), new Map()).reason,
+    "nick_blacklist"
+  );
 
   const net = cfg({ network_blacklist: ["OFTC"], rules: [{}] });
-  assert.equal(evaluate(net, baseCtx({ networkName: "OFTC" }), new Map()).reason, "network_blacklist");
+  assert.equal(
+    evaluate(net, baseCtx({ networkName: "OFTC" }), new Map()).reason,
+    "network_blacklist"
+  );
 
   const cd = cfg({ cooldown: 60, rules: [{}] });
   const last = new Map([["c:Libera:#dev", 1000]]);
@@ -217,18 +262,85 @@ test("evaluate returns rule object so callers can read per-rule priority", () =>
   assert.equal(r.rule.priority, "high");
 });
 
+// ── mute ────────────────────────────────────────────────────────────────────────
+
+test("evaluate skips with muted when ctx.muted is true, even if a rule would match", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ muted: true }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "muted");
+});
+
+test("evaluate ignores mute when ctx.muted is false", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ muted: false }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+// ── global rate limit ──────────────────────────────────────────────────────────
+
+test("evaluate skips with rate_limit once max_per_minute is reached", () => {
+  const c = cfg({ max_per_minute: 2, rules: [{}] });
+  const notifyLog = [1000, 1010]; // two notifications already sent in this window
+  const r = evaluate(c, baseCtx({ now: 1020 }), new Map(), notifyLog);
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "rate_limit");
+});
+
+test("evaluate allows notifications under the max_per_minute cap", () => {
+  const c = cfg({ max_per_minute: 2, rules: [{}] });
+  const notifyLog = [1000];
+  const r = evaluate(c, baseCtx({ now: 1020 }), new Map(), notifyLog);
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate prunes notifyLog entries older than 60s", () => {
+  const c = cfg({ max_per_minute: 1, rules: [{}] });
+  const notifyLog = [900]; // more than 60s before now=1000
+  const r = evaluate(c, baseCtx({ now: 1000 }), new Map(), notifyLog);
+  assert.equal(r.decision, "notify");
+  assert.deepEqual(notifyLog, []); // stale entry pruned
+});
+
+test("max_per_minute:0 disables the rate limit", () => {
+  const c = cfg({ max_per_minute: 0, rules: [{}] });
+  const notifyLog = [1000, 1001, 1002, 1003, 1004];
+  const r = evaluate(c, baseCtx({ now: 1005 }), new Map(), notifyLog);
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate defaults notifyLog to an empty array when omitted", () => {
+  const c = cfg({ max_per_minute: 1, rules: [{}] });
+  const r = evaluate(c, baseCtx(), new Map());
+  assert.equal(r.decision, "notify");
+});
+
 test("per-rule cooldowns are independent across rules", () => {
   // Two rules: #general with 300s cooldown, #dev with 0 cooldown
-  const c = cfg({ cooldown: 0, rules: [{ channel: "#general", cooldown: 300 }, { channel: "#dev", cooldown: 0 }] });
-  const last = new Map([["c:Libera:#general", 900], ["c:Libera:#dev", 999]]);
+  const c = cfg({
+    cooldown: 0,
+    rules: [
+      { channel: "#general", cooldown: 300 },
+      { channel: "#dev", cooldown: 0 },
+    ],
+  });
+  const last = new Map([
+    ["c:Libera:#general", 900],
+    ["c:Libera:#dev", 999],
+  ]);
   // #general is in cooldown
   assert.equal(
-    evaluate(c, baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1000 }), last).decision,
+    evaluate(
+      c,
+      baseCtx({ channel: "#general", clientKey: "c:Libera:#general", now: 1000 }),
+      last
+    ).decision,
     "skip"
   );
   // #dev is not in cooldown (cooldown:0)
   assert.equal(
-    evaluate(c, baseCtx({ channel: "#dev", clientKey: "c:Libera:#dev", now: 1000 }), last).decision,
+    evaluate(c, baseCtx({ channel: "#dev", clientKey: "c:Libera:#dev", now: 1000 }), last)
+      .decision,
     "notify"
   );
 });

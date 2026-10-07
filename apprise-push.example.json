@@ -15,6 +15,8 @@
 
   "away_only": false,
   "cooldown": 0,
+  "max_per_minute": 0,
+  "digest_window": 0,
   "nick_blacklist": ["*bot*", "ChanServ", "NickServ"],
   "network_blacklist": [],
   "highlight_words": [],
@@ -22,10 +24,7 @@
   "priority": null,
   "timezone": "",
 
-  "rules": [
-    { "highlight": true },
-    { "pm": true }
-  ],
+  "rules": [{ "highlight": true }, { "pm": true }],
 
   "debug": false
 }
