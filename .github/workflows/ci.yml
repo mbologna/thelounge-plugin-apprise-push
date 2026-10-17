@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   ci:
-    uses: mbologna/.github/.github/workflows/node-ci.yml@47a15cb74b9edc7c5a44e41c5bfece408f67d8dd # main
+    uses: mbologna/.github/.github/workflows/node-ci.yml@0436a70711b0ac798568028cba01d78e896e4075 # main
     with:
       node_version: lts/*
       package_manager: npm
@@ -24,7 +24,7 @@ jobs:
 
   auto-release:
     if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/auto-release.yml@47a15cb74b9edc7c5a44e41c5bfece408f67d8dd # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@0436a70711b0ac798568028cba01d78e896e4075 # main
     with:
       strategy: commits
     secrets: inherit
