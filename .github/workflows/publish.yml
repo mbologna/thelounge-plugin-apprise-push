@@ -8,6 +8,8 @@ name: Publish to npm
 "on":
   release:
     types: [published]
+  # auto-release (ci.yml) starts it on the new tag this way.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ permissions:
 
 jobs:
   publish:
-    uses: mbologna/.github/.github/workflows/npm-publish.yml@83a94cc1bdc464afe31abb9cb99a575e5a8a38ef # main
+    uses: mbologna/.github/.github/workflows/npm-publish.yml@38f7ca7d59dad7be2dfd5607f8758cd51bb41dd2 # main
     with:
       node_version: lts/*
       package_manager: npm
