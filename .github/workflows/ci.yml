@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   ci:
-    uses: mbologna/.github/.github/workflows/node-ci.yml@38f7ca7d59dad7be2dfd5607f8758cd51bb41dd2 # main
+    uses: mbologna/.github/.github/workflows/node-ci.yml@31ef9e1806fb2404b1e83e71cdb3838a2c56b5c1 # main
     with:
       node_version: lts/*
       package_manager: npm
@@ -23,12 +23,13 @@ jobs:
       enable_release_drafter: true
 
   auto-release:
-    # Monday's schedule releases; a manual run on the default branch releases
-    # at once. The tag build auto-release dispatches runs on the tag ref, so it
-    # does not release again.
+    # Monday's schedule and a manual run release with the strategy below; a push
+    # to the default branch releases only a CVE fix (the wrapper switches to the
+    # security strategy). The tag build auto-release dispatches runs on the tag
+    # ref, so it does not release again.
     if: >-
       github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' &&
+      ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     # contents: push the tag and create the Release; actions: start the npm
     # publish on it. A Release created with GITHUB_TOKEN triggers no
@@ -36,8 +37,8 @@ jobs:
     permissions:
       contents: write
       actions: write
-    uses: mbologna/.github/.github/workflows/auto-release.yml@38f7ca7d59dad7be2dfd5607f8758cd51bb41dd2 # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@31ef9e1806fb2404b1e83e71cdb3838a2c56b5c1 # main
     with:
-      strategy: commits
+      strategy: conventional
       dispatch_workflow: publish.yml
     secrets: inherit
