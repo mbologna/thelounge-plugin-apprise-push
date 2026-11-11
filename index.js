@@ -149,6 +149,16 @@ function makeHandler(
 // Timing is correct: loadPackages() (which calls onServerStart) runs before
 // manager.init() which triggers client.connect() → network.createIrcFramework().
 
+// A target is a channel when it starts with one of the server's CHANTYPES
+// (ISUPPORT), so &bitlbee or !channels aren't mistaken for PMs. irc-framework
+// falls back to "&#" before ISUPPORT arrives.
+function isChannelTarget(irc, target) {
+  if (typeof irc?.network?.isChannelName === "function") {
+    return irc.network.isChannelName(target);
+  }
+  return /^[#&]/.test(target);
+}
+
 const PATCHED = Symbol("apprisePushPatched");
 
 function setupNetworkHook(handle, getCfg) {
@@ -189,7 +199,7 @@ function setupNetworkHook(handle, getCfg) {
       if (event.from_server) return;
       if (event.type === "notice") return;
 
-      const isQuery = !event.target.startsWith("#");
+      const isQuery = !isChannelTarget(network.irc, event.target);
       handle({
         client,
         network,
@@ -295,3 +305,4 @@ module.exports.onServerStart = () => {
 // Exported for tests / programmatic use.
 module.exports.makeHandler = makeHandler;
 module.exports.setupNetworkHook = setupNetworkHook;
+module.exports.isChannelTarget = isChannelTarget;

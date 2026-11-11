@@ -4,7 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { makeHandler } = require("../index");
+const { makeHandler, isChannelTarget } = require("../index");
 const { compileConfig } = require("../lib/config");
 const { createMetrics } = require("../lib/metrics");
 
@@ -328,4 +328,23 @@ test("makeHandler records timestamp for suppress decisions so their cooldown wor
   assert.equal(received.length, 0, "suppress rule produces no notifications");
 
   closeAll();
+});
+
+test("isChannelTarget follows the server's CHANTYPES, not just #", () => {
+  const irc = (chantypes) => ({
+    network: {
+      isChannelName: (name) => (chantypes ?? "&#").includes(name[0]),
+    },
+  });
+  assert.equal(isChannelTarget(irc(), "#dev"), true);
+  assert.equal(isChannelTarget(irc(), "&bitlbee"), true);
+  assert.equal(isChannelTarget(irc(), "alice"), false);
+  assert.equal(isChannelTarget(irc("#"), "&bitlbee"), false);
+  assert.equal(isChannelTarget(irc("#!+"), "!abcdeops"), true);
+});
+
+test("isChannelTarget treats # and & as channels without network info", () => {
+  assert.equal(isChannelTarget(undefined, "#dev"), true);
+  assert.equal(isChannelTarget({}, "&bitlbee"), true);
+  assert.equal(isChannelTarget({}, "root"), false);
 });
