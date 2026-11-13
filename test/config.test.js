@@ -277,3 +277,26 @@ test("compileConfig leaves rule._parsedUrl null when apprise_url is not set on t
   const c = cfg({ rules: [{}] });
   assert.equal(c.rules[0]._parsedUrl, null);
 });
+
+test("compileConfig parses apprise_fallback_bases and drops invalid entries", () => {
+  const warnings = [];
+  const c = compileConfig(
+    { apprise_url: "http://a/notify/k", apprise_fallback_bases: ["http://b:8000", "ftp://c", "nope"] },
+    (m) => warnings.push(m)
+  );
+  assert.deepEqual(
+    c.fallbackBases.map((u) => u.origin),
+    ["http://b:8000"]
+  );
+  assert.equal(warnings.length, 2);
+});
+
+test("compileConfig ignores a non-array apprise_fallback_bases", () => {
+  const warnings = [];
+  const c = compileConfig(
+    { apprise_url: "http://a/notify/k", apprise_fallback_bases: "http://b:8000" },
+    (m) => warnings.push(m)
+  );
+  assert.deepEqual(c.fallbackBases, []);
+  assert.equal(warnings.length, 1);
+});

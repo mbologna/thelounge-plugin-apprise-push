@@ -114,6 +114,12 @@ Optional. Use these when your Apprise API sits behind auth or a reverse proxy.
 | `apprise_token`   | string | `""`    | Shorthand, sent as `Authorization: Bearer <token>`.                        |
 | `apprise_headers` | object | `{}`    | Arbitrary extra HTTP headers. Overrides the bearer header on key conflict. |
 
+### Fallback instances
+
+| Key                      | Type  | Default | Description |
+| ------------------------ | ----- | ------- | ----------- |
+| `apprise_fallback_bases` | array | `[]`    | Base URLs of other Apprise instances serving the same keys, e.g. `["http://apprise-2:8000"]`. When a send fails, each is tried on the same `/notify/<key>` path (rule URLs included) before the next retry, so one instance being down loses nothing. Same token and headers. |
+
 ```json
 "apprise_headers": { "Authorization": "Basic dXNlcjpwYXNz", "X-Source": "thelounge" }
 ```

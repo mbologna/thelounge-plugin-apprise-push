@@ -179,3 +179,68 @@ test("sendApprise omits priority from payload when null", async () => {
   const parsed = JSON.parse(received[0].body);
   assert.equal(Object.hasOwn(parsed, "priority"), false);
 });
+
+test("sendApprise falls back to apprise_fallback_bases on the same path", async () => {
+  const down = await withServer((_req, res) => {
+    res.writeHead(503);
+    res.end();
+  });
+  const up = await withServer((_req, res) => {
+    res.writeHead(200);
+    res.end("ok");
+  });
+  const fallback = new URL(up.url).origin;
+
+  const ok = await sendApprise(
+    cfgFor(down.url, { apprise_fallback_bases: [fallback], retries: 0 }),
+    "t",
+    "b"
+  );
+  down.server.close();
+  up.server.close();
+
+  assert.equal(ok, true);
+  assert.equal(down.received.length, 1);
+  assert.equal(up.received.length, 1);
+  assert.equal(up.received[0].url, "/notify/key");
+});
+
+test("sendApprise tries every target in each attempt before backing off", async () => {
+  const a = await withServer((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const b = await withServer((_req, res, _body, n) => {
+    res.writeHead(n === 2 ? 200 : 500);
+    res.end();
+  });
+
+  const ok = await sendApprise(
+    cfgFor(a.url, { apprise_fallback_bases: [new URL(b.url).origin], retries: 1, retry_delay: 1 }),
+    "t",
+    "b"
+  );
+  a.server.close();
+  b.server.close();
+
+  assert.equal(ok, true);
+  assert.equal(a.received.length, 2);
+  assert.equal(b.received.length, 2);
+});
+
+test("a fallback base equal to the URL's origin is not tried twice", async () => {
+  const { server, received, url } = await withServer((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+
+  const ok = await sendApprise(
+    cfgFor(url, { apprise_fallback_bases: [new URL(url).origin], retries: 0 }),
+    "t",
+    "b"
+  );
+  server.close();
+
+  assert.equal(ok, false);
+  assert.equal(received.length, 1);
+});
