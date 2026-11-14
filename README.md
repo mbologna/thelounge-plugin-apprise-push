@@ -636,6 +636,13 @@ engine), `template.js` (placeholder expansion), `apprise.js` (HTTP delivery),
 `digest.js` (message batching), `mute.js` (mute/snooze state), and `metrics.js` (counters).
 [`index.js`](index.js) wires them into TheLounge.
 
+Releases: [auto-release](https://github.com/mbologna/auto-release) tags the next version
+from the Conventional Commits on `main` (Monday's scheduled CI run, or a manual run) and
+starts `publish.yml` on the tag, which sets the package version from the tag
+(`npm version`) and publishes to npm with Trusted Publishing. The tag is the source of
+truth; `version` in `package.json` is kept at the latest release by hand, so a release
+that forgets it still publishes the right version.
+
 ---
 
 ## Related
