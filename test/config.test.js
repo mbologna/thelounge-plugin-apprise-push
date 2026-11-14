@@ -281,7 +281,10 @@ test("compileConfig leaves rule._parsedUrl null when apprise_url is not set on t
 test("compileConfig parses apprise_fallback_bases and drops invalid entries", () => {
   const warnings = [];
   const c = compileConfig(
-    { apprise_url: "http://a/notify/k", apprise_fallback_bases: ["http://b:8000", "ftp://c", "nope"] },
+    {
+      apprise_url: "http://a/notify/k",
+      apprise_fallback_bases: ["http://b:8000", "ftp://c", "nope"],
+    },
     (m) => warnings.push(m)
   );
   assert.deepEqual(
@@ -299,4 +302,22 @@ test("compileConfig ignores a non-array apprise_fallback_bases", () => {
   );
   assert.deepEqual(c.fallbackBases, []);
   assert.equal(warnings.length, 1);
+});
+
+test("alert_key defaults to system-alerts", () => {
+  assert.equal(cfg({ apprise_url: "http://a/notify/k" }).alert_key, "system-alerts");
+  assert.equal(
+    cfg({ apprise_url: "http://a/notify/k", alert_key: " ops " }).alert_key,
+    "ops"
+  );
+  assert.equal(cfg({ apprise_url: "http://a/notify/k", alert_key: "" }).alert_key, "");
+});
+
+test("a non-string alert_key warns and falls back to the default", () => {
+  const warnings = [];
+  const c = compileConfig({ apprise_url: "http://a/notify/k", alert_key: 42 }, (w) =>
+    warnings.push(w)
+  );
+  assert.equal(c.alert_key, "system-alerts");
+  assert.ok(warnings.some((w) => w.includes('"alert_key" should be a string')));
 });

@@ -4,6 +4,9 @@
   "apprise_token": "",
   "apprise_headers": {},
 
+  "apprise_fallback_bases": [],
+  "alert_key": "system-alerts",
+
   "timeout": 10000,
   "retries": 2,
   "retry_delay": 500,

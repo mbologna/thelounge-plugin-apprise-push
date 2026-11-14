@@ -25,6 +25,8 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 - 🔔 **Notification priority** support for services that honour it (Pushover, ntfy, Gotify …).
 - 🔐 **Apprise authentication** with a bearer token or arbitrary custom headers.
 - 🔁 **Retry with exponential backoff** and a configurable request timeout.
+- 🚨 **Config-error alerts**: when Apprise rejects a notification (unknown key, bad token),
+  the error is logged and, at most once a day, reported to a separate Apprise key.
 - 😴 **Away-only mode**, per-context **cooldown**, a global **rate limit**, nick/network
   **blacklists**, and extra **highlight words**.
 - 📦 **Digest mode**: batch messages for a busy channel or PM into one notification instead
@@ -48,6 +50,8 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 - [Configuration](#configuration)
   - [Apprise connection](#apprise-connection)
   - [Authentication](#authentication)
+  - [Fallback instances](#fallback-instances)
+  - [Config-error alerts](#config-error-alerts)
   - [Delivery tuning](#delivery-tuning)
   - [Notification text](#notification-text)
   - [Global pre-filters](#global-pre-filters)
@@ -124,12 +128,36 @@ Optional. Use these when your Apprise API sits behind auth or a reverse proxy.
 "apprise_headers": { "Authorization": "Basic dXNlcjpwYXNz", "X-Source": "thelounge" }
 ```
 
+### Config-error alerts
+
+| Key         | Type   | Default           | Description |
+| ----------- | ------ | ----------------- | ----------- |
+| `alert_key` | string | `"system-alerts"` | Apprise key that is told when Apprise answers a notification with a client error (4xx). `""` turns the alert off. |
+
+A 4xx means Apprise was reached and refused the request: the key has no configuration
+(`404`), the token is wrong (`401`/`403`), or the service behind the key refused the
+message (`424`). Retrying won't fix any of these, so the plugin:
+
+1. does not retry (the fallback instances are still tried once);
+2. logs an error naming the endpoint and the status, on every failed notification, with or
+   without `debug`;
+3. sends a `warning` to `alert_key`, at most once every 24 hours per TheLounge process. The
+   alert goes to the failing URL with its last path segment replaced (`/notify/irc` →
+   `/notify/system-alerts`), then to the same path on each fallback instance, with the
+   same token and headers. It is sent once, without retries, and a failed alert is only
+   logged.
+
+A 4xx on one instance is reported even when a fallback instance then delivers, since the
+key is still broken there. `408` and `429` are not config errors: they are retried like a
+timeout or a `5xx`. Network errors and `5xx` keep the retry-then-log behaviour below and
+send no alert. Nothing is sent about the alert key itself.
+
 ### Delivery tuning
 
 | Key           | Type   | Default | Description                                                                                        |
 | ------------- | ------ | ------- | -------------------------------------------------------------------------------------------------- |
 | `timeout`     | number | `10000` | Milliseconds before a single Apprise request is aborted.                                           |
-| `retries`     | number | `2`     | Extra attempts after the first on transient failure (timeout, 5xx, network). `0` disables retries. |
+| `retries`     | number | `2`     | Extra attempts after the first on transient failure (timeout, 5xx, 408, 429, network). `0` disables retries. Other 4xx answers are [config errors](#config-error-alerts) and are not retried. |
 | `retry_delay` | number | `500`   | Base backoff in ms; grows exponentially (`500 → 1000 → 2000 …`).                                   |
 
 ### Notification text
@@ -513,8 +541,9 @@ Unknown config keys and bad value types are also reported as warnings at load ti
   prefixed with `* nick` in the notification body.
 - **Cooldown** is tracked independently per context (each channel and each PM thread has its
   own timer).
-- **Retries** apply to transient failures (timeouts, network errors, and non-2xx responses)
-  with exponential backoff; the request is dropped after the last attempt and the error is logged.
+- **Retries** apply to transient failures (timeouts, network errors, `5xx`, `408` and `429`)
+  with exponential backoff; the request is dropped after the last attempt and the error is
+  logged. Other `4xx` answers are not retried; see [Config-error alerts](#config-error-alerts).
 - **Hot-reload**: `apprise-push.json` is watched for changes. Edits take effect within a
   second; no TheLounge restart required. If the file is invalid JSON the previous config is
   kept and an error is logged.
@@ -563,6 +592,14 @@ Unknown config keys and bad value types are also reported as warnings at load ti
 - Increase `timeout` if your Apprise server is slow to respond.
 - Check Apprise server logs for errors; the plugin logs the HTTP status code on failure.
 - Use `"debug": true` to see individual attempt results.
+
+**`Apprise answered HTTP 404 for …` in the log**
+
+- The key in that URL has no configuration on that Apprise instance. Add it in Apprise, or
+  fix the key in `apprise_url` (or the rule's `apprise_url`). With `apprise_fallback_bases`,
+  every instance needs the key. `401`/`403` point at `apprise_token` or `apprise_headers`.
+- The first such error of the day is also sent to `alert_key` (`system-alerts` by default);
+  if that key is missing too, the log shows `could not send the config-error alert`.
 
 ---
 
