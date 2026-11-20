@@ -64,6 +64,7 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 - [Notes](#notes)
 - [How it works](#how-it-works)
 - [Development](#development)
+- [Versioning](#versioning)
 - [Related](#related)
 - [License](#license)
 
@@ -636,12 +637,18 @@ engine), `template.js` (placeholder expansion), `apprise.js` (HTTP delivery),
 `digest.js` (message batching), `mute.js` (mute/snooze state), and `metrics.js` (counters).
 [`index.js`](index.js) wires them into TheLounge.
 
-Releases: [auto-release](https://github.com/mbologna/auto-release) tags the next version
-from the Conventional Commits on `main` (Monday's scheduled CI run, or a manual run) and
-starts `publish.yml` on the tag, which sets the package version from the tag
-(`npm version`) and publishes to npm with Trusted Publishing. The tag is the source of
+---
+
+## Versioning
+
+Releases follow SemVer: [auto-release](https://github.com/mbologna/auto-release) tags
+`vX.Y.Z` from the Conventional Commit types on `main` (`feat` minor; `fix`, `perf`,
+`revert` patch; a breaking change major) on Monday's scheduled CI run, or a manual run,
+and starts `publish.yml` on the tag, which sets the package version from the tag
+(`npm version`) and publishes it to npm with Trusted Publishing. The tag is the source of
 truth; `version` in `package.json` is kept at the latest release by hand, so a release
-that forgets it still publishes the right version.
+that forgets it still publishes the right version. See the
+[versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
 
 ---
 
