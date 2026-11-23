@@ -17,4 +17,4 @@ permissions:
 
 jobs:
   publish:
-    uses: mbologna/.github/.github/workflows/npm-publish.yml@a3c72d5835a4634fd90416f79abf930e49d1d96b # main
+    uses: mbologna/.github/.github/workflows/npm-publish.yml@935e4a724ac131476dd6c3e5d141cbb1bb651a6d # main
