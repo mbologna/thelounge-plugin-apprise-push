@@ -64,6 +64,7 @@ is configured with a single JSON file that is **hot-reloaded** on change.
 - [Notes](#notes)
 - [How it works](#how-it-works)
 - [Development](#development)
+- [Why not an existing tool](#why-not-an-existing-tool)
 - [Versioning](#versioning)
 - [Related](#related)
 - [License](#license)
@@ -636,6 +637,18 @@ The codebase is split into small, individually-tested modules under [`lib/`](lib
 engine), `template.js` (placeholder expansion), `apprise.js` (HTTP delivery),
 `digest.js` (message batching), `mute.js` (mute/snooze state), and `metrics.js` (counters).
 [`index.js`](index.js) wires them into TheLounge.
+
+---
+
+## Why not an existing tool
+
+- TheLounge's built-in Web Push sends a browser or PWA notification to each subscribed
+  device. It has no rules, templates, cooldown or nick blacklist, and can't deliver
+  through Apprise (to Telegram and others) with fallback instances.
+- [thelounge-plugin-ntfy](https://github.com/cy1der/thelounge-plugin-ntfy) sends to ntfy,
+  not Apprise, and has a single maintainer.
+
+Checked 2026-11-23.
 
 ---
 
