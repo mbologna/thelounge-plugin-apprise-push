@@ -28,7 +28,9 @@ function makeHandler(
   muteState = NOT_MUTED,
   metrics = createMetrics()
 ) {
-  const digestManager = createDigestManager(sendApprise, notifyLog, metrics);
+  const digestManager = createDigestManager(sendApprise, notifyLog, metrics, (now) =>
+    muteState.isMuted(now)
+  );
 
   return function handle({
     client,

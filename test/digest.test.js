@@ -150,3 +150,22 @@ test("per-rule digest_window:0 bypasses digest even when the global default is s
 
   assert.equal(received.length, 1, "PM rule's digest_window:0 sends immediately");
 });
+
+test("a digest batch is dropped when muted before its window ends", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, digest_window: 0.05, rules: [{}] },
+    () => {}
+  );
+  let muted = false;
+  const handler = makeHandler(() => cfg, new Map(), [], { isMuted: () => muted });
+
+  handler(makeEvent({ rawMessage: "before the mute" }));
+  muted = true;
+
+  await new Promise((r) => setTimeout(r, 100));
+  closeAll();
+
+  assert.equal(received.length, 0, "nothing is sent while muted");
+});
