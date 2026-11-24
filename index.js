@@ -110,9 +110,14 @@ function makeHandler(
       message: truncate(cleanMessage, cfg.body_length),
     };
 
-    // Per-rule template overrides fall back to the global templates.
+    // Per-rule template overrides fall back to the global templates. A /me
+    // action has its own body template, so it reads "* nick waves" rather than
+    // repeating the nick in front of it.
     const titleTpl = rule.title ?? (isQuery ? cfg.title_pm : cfg.title_chan);
-    const bodyTpl = rule.body ?? cfg.body;
+    const bodyTpl =
+      messageType === "action"
+        ? (rule.body_action ?? cfg.body_action)
+        : (rule.body ?? cfg.body);
 
     const title = expand(titleTpl, vars);
     const body = expand(bodyTpl, vars);
@@ -233,9 +238,8 @@ function setupNetworkHook(handle, getCfg) {
         network,
         target: isQuery ? event.nick : event.target,
         senderNick: event.nick,
-        // Prefix /me actions so they read naturally: "* nick waves"
-        rawMessage:
-          event.type === "action" ? `* ${event.nick} ${event.message}` : event.message,
+        // For a /me action only its text ("waves"): body_action adds "* nick".
+        rawMessage: event.message,
         isQuery,
         messageType: event.type, // "privmsg" or "action"
         // The Lounge drops messages from users on the network's /ignore list

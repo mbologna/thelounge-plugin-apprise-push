@@ -138,17 +138,18 @@ After the last attempt the notification is dropped and the error logged.
 
 ### Notification text
 
-| Key           | Default                        | Description                                                                                                                                                                     |
-| ------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title_pm`    | `"PM from {nick} [{network}]"` | Title template for private message notifications.                                                                                                                               |
-| `title_chan`  | `"[{network}] {channel}"`      | Title template for channel notifications.                                                                                                                                       |
-| `body`        | `"{nick}: {message}"`          | Notification body template.                                                                                                                                                     |
-| `body_length` | `100`                          | Truncate `{message}` to this many characters. `0` = unlimited.                                                                                                                  |
-| `priority`    | `null`                         | Notification priority passed to Apprise. `null` = omit. Accepts a number or `"min"` / `"low"` / `"normal"` / `"high"` / `"max"`. Honoured by Pushover, ntfy, Gotify and others. |
-| `timezone`    | `""`                           | IANA time zone for the `{time}` placeholder, e.g. `"America/New_York"`. Empty = the system time zone.                                                                           |
+| Key           | Default                        | Description                                                                                                                                                                           |
+| ------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title_pm`    | `"PM from {nick} [{network}]"` | Title template for private message notifications.                                                                                                                                     |
+| `title_chan`  | `"[{network}] {channel}"`      | Title template for channel notifications.                                                                                                                                             |
+| `body`        | `"{nick}: {message}"`          | Notification body template.                                                                                                                                                           |
+| `body_action` | `"* {nick} {message}"`         | Body template for a `/me` action, where `{message}` is the action's text (`waves` in `* bob waves`). A rule's `body` applies to messages only; a rule sets `body_action` for actions. |
+| `body_length` | `100`                          | Truncate `{message}` to this many characters. `0` = unlimited.                                                                                                                        |
+| `priority`    | `null`                         | Notification priority passed to Apprise. `null` = omit. Accepts a number or `"min"` / `"low"` / `"normal"` / `"high"` / `"max"`. Honoured by Pushover, ntfy, Gotify and others.       |
+| `timezone`    | `""`                           | IANA time zone for the `{time}` placeholder, e.g. `"America/New_York"`. Empty = the system time zone.                                                                                 |
 
-These placeholders work in `title_pm`, `title_chan`, `body` and the per-rule `title` and
-`body`. An unknown placeholder is left as written, so a typo shows in the notification.
+These placeholders work in `title_pm`, `title_chan`, `body`, `body_action` and the
+per-rule `title`, `body` and `body_action`. An unknown placeholder is left as written, so a typo shows in the notification.
 
 | Placeholder | Value                                                                |
 | ----------- | -------------------------------------------------------------------- |
@@ -159,7 +160,7 @@ These placeholders work in `title_pm`, `title_chan`, `body` and the per-rule `ti
 | `{time}`    | Time the message was received, in `timezone`                         |
 | `{message}` | Message text with IRC formatting removed, truncated to `body_length` |
 
-A `/me` action notifies like a message, with its text prefixed by `* nick`. `body_length`
+A `/me` action notifies like a message, through `body_action`: `* bob waves`. `body_length`
 counts characters as people read them, so an emoji at the cut is never split.
 
 ### Global pre-filters
@@ -226,6 +227,7 @@ ignore case.
 | `action`        | `"notify"` | `"notify"` sends a notification. `"suppress"` stops evaluation and sends nothing.                                                                                                         |
 | `title`         | _(global)_ | Title template for this rule. Omit to use `title_pm` (private messages) or `title_chan` (channels).                                                                                       |
 | `body`          | _(global)_ | Body template for this rule. Omit to use the global `body`.                                                                                                                               |
+| `body_action`   | _(global)_ | Body template for `/me` actions matched by this rule. Omit to use the global `body_action`.                                                                                               |
 | `cooldown`      | _(global)_ | Cooldown in seconds for messages this rule matches. `0` always notifies. The timer restarts on each notification sent; skipped messages don't restart it.                                 |
 | `priority`      | _(global)_ | Priority for this rule; same values as the global `priority`.                                                                                                                             |
 | `apprise_url`   | _(global)_ | Send this rule's notifications to another Apprise endpoint or key. Validated like the global one. Token, headers, `timeout`, `retries`, `retry_delay` and fallback instances stay global. |

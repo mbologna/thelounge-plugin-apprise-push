@@ -115,6 +115,51 @@ test("makeHandler expands template variables in title and body", async () => {
   assert.equal(received[0].body, "bob: hello world");
 });
 
+// Resolves once `received` holds `count` requests, or after two seconds.
+async function waitForRequests(received, count) {
+  const deadline = Date.now() + 2000;
+  while (received.length < count && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+test("makeHandler writes a /me action through body_action, without repeating the nick", async () => {
+  const { closeAll, received, port } = await withServer();
+  const cfg = compileConfig(
+    { apprise_url: `http://127.0.0.1:${port}/notify/key`, rules: [{}] },
+    () => {}
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(
+    makeEvent({ senderNick: "bob", rawMessage: "pokes al", messageType: "action" })
+  );
+  handler(makeEvent({ senderNick: "bob", rawMessage: "hello", target: "#other" }));
+  await waitForRequests(received, 2);
+  closeAll();
+
+  assert.deepEqual(received.map((r) => r.body).sort(), ["* bob pokes al", "bob: hello"]);
+});
+
+test("a rule's body applies to messages and its body_action to actions", async () => {
+  const { closeAll, received, port } = await withServer();
+  const cfg = compileConfig(
+    {
+      apprise_url: `http://127.0.0.1:${port}/notify/key`,
+      rules: [{ body: "said {message}", body_action: "did {message}" }],
+    },
+    () => {}
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ rawMessage: "waves", messageType: "action" }));
+  handler(makeEvent({ rawMessage: "hi", target: "#other" }));
+  await waitForRequests(received, 2);
+  closeAll();
+
+  assert.deepEqual(received.map((r) => r.body).sort(), ["did waves", "said hi"]);
+});
+
 test("makeHandler skips messages from own nick", async () => {
   const { closeAll, received, port } = await withServer();
   const url = `http://127.0.0.1:${port}/notify/key`;
