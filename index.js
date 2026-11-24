@@ -41,6 +41,7 @@ function makeHandler(
     isQuery,
     messageType,
     ignored = false,
+    channelMuted = false,
   }) {
     const cfg = getCfg();
 
@@ -71,6 +72,7 @@ function makeHandler(
       attachedCount,
       muted: muteState.isMuted(now),
       ignored,
+      channelMuted,
     };
 
     const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified, notifyLog);
@@ -173,6 +175,15 @@ function isHistoryReplay(event) {
   return HISTORY_BATCHES.has(event?.batch?.type);
 }
 
+// True when The Lounge has muted the window a message lands in: the channel, or
+// for a private message the query window named after the sender. Muting a
+// network mutes every window in it. A private message with no query window yet
+// opens an unmuted one, so it isn't muted, as in The Lounge.
+function isMutedWindow(network, name) {
+  if (typeof network.getChannel !== "function") return false;
+  return Boolean(network.getChannel(name)?.muted);
+}
+
 const PATCHED = Symbol("apprisePushPatched");
 
 function setupNetworkHook(handle, getCfg) {
@@ -229,6 +240,7 @@ function setupNetworkHook(handle, getCfg) {
         // (Network.isIgnoredUser, The Lounge 4.5+); the plugin skips them too.
         ignored:
           typeof network.isIgnoredUser === "function" && network.isIgnoredUser(event),
+        channelMuted: isMutedWindow(network, isQuery ? event.nick : event.target),
       });
     });
 
@@ -326,3 +338,4 @@ module.exports.makeHandler = makeHandler;
 module.exports.setupNetworkHook = setupNetworkHook;
 module.exports.isChannelTarget = isChannelTarget;
 module.exports.isHistoryReplay = isHistoryReplay;
+module.exports.isMutedWindow = isMutedWindow;

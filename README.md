@@ -163,12 +163,13 @@ counts characters as people read them, so an emoji at the cut is never split.
 
 ### Global pre-filters
 
-The first five run before any rule, in the order listed, and no rule can override them.
+The first six run before any rule, in the order listed, and no rule can override them.
 `cooldown`, `digest_window` and `highlight_words` are global defaults used once a rule
 matches.
 
 | Key                 | Default | Description                                                                                                                                                                                                                                        |
 | ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ignore_muted`      | `true`  | Skip messages in a channel or query window muted in The Lounge. Muting a network in The Lounge mutes all its windows. `false` notifies for muted windows too, for someone who mutes a channel in the browser but keeps a rule for it.              |
 | `ignore_services`   | `true`  | Skip private messages from network services: NickServ, ChanServ, MemoServ, OperServ, HostServ, BotServ, SaslServ and the comma-separated nicks in the `THELOUNGE_SERVICE_NICKS` environment variable. Channel messages from them are not affected. |
 | `away_only`         | `false` | Only notify when **no** The Lounge browser tab is connected, like ZNC's away-only mode.                                                                                                                                                            |
 | `nick_blacklist`    | `[]`    | Glob patterns. Messages from matching nicks are dropped. E.g. `["*bot*", "root"]`.                                                                                                                                                                 |
@@ -515,6 +516,7 @@ Lounge's standard output:
 | `→ notify`                   | A rule matched and a notification was sent or batched    |
 | `→ skip (muted)`             | `apprise-push.mute` is present and in effect             |
 | `→ skip (ignored)`           | The sender is on the network's `/ignore` list            |
+| `→ skip (muted_channel)`     | The window is muted in The Lounge, with `ignore_muted`   |
 | `→ skip (service)`           | A private message from a service, with `ignore_services` |
 | `→ skip (away_only)`         | `away_only` is on and a browser tab is connected         |
 | `→ skip (nick_blacklist)`    | The sender matched `nick_blacklist`                      |
@@ -535,6 +537,12 @@ Lounge's standard output:
    configuration file was missing, failed to parse or had no `apprise_url`.
 4. `→ skip (no_match)` means no rule matched. The default rules notify only on highlights
    and private messages; add a broader rule if needed.
+
+### A muted channel no longer notifies
+
+`ignore_muted` is on by default, so a channel or query muted in The Lounge (with `/mute`
+or its context menu) stays silent, as it does in The Lounge. Unmute it, or set
+`"ignore_muted": false` to let the rules decide alone.
 
 ### A service's private messages no longer notify
 

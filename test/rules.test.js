@@ -402,3 +402,16 @@ test("evaluate skips messages from users The Lounge ignores", () => {
   assert.equal(r.decision, "skip");
   assert.equal(r.reason, "ignored");
 });
+
+test("evaluate skips a channel muted in The Lounge by default", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ channelMuted: true }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "muted_channel");
+});
+
+test("ignore_muted: false notifies for a muted channel", () => {
+  const c = cfg({ ignore_muted: false, rules: [{}] });
+  const r = evaluate(c, baseCtx({ channelMuted: true }), new Map());
+  assert.equal(r.decision, "notify");
+});

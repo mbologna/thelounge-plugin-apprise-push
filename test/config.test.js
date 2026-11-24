@@ -352,3 +352,11 @@ test("compileConfig warns on a non-boolean ignore_services and keeps the default
   assert.equal(c.ignore_services, true);
   assert.ok(warnings.some((w) => w.includes("ignore_services")));
 });
+
+test("compileConfig defaults ignore_muted to true and warns on a non-boolean", () => {
+  assert.equal(compileConfig({}, () => {}, {}).ignore_muted, true);
+  const warnings = [];
+  const c = compileConfig({ ignore_muted: 0 }, (m) => warnings.push(m), {});
+  assert.equal(c.ignore_muted, true);
+  assert.ok(warnings.some((w) => w.includes("ignore_muted")));
+});

@@ -4,7 +4,12 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { makeHandler, isHistoryReplay, isChannelTarget } = require("../index");
+const {
+  makeHandler,
+  isHistoryReplay,
+  isChannelTarget,
+  isMutedWindow,
+} = require("../index");
 const { compileConfig } = require("../lib/config");
 const { createMetrics } = require("../lib/metrics");
 
@@ -370,6 +375,33 @@ test("makeHandler skips a message from an ignored user", async () => {
   const handler = makeHandler(() => cfg, new Map());
 
   handler(makeEvent({ isQuery: true, target: "bob", senderNick: "bob", ignored: true }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 0);
+});
+
+test("isMutedWindow reads the window's muted flag from The Lounge's network", () => {
+  const channels = {
+    "#quiet": { muted: true },
+    "#loud": { muted: false },
+    bob: { muted: true },
+  };
+  const network = { getChannel: (name) => channels[name] };
+  assert.equal(isMutedWindow(network, "#quiet"), true);
+  assert.equal(isMutedWindow(network, "#loud"), false);
+  assert.equal(isMutedWindow(network, "bob"), true);
+  assert.equal(isMutedWindow(network, "newcomer"), false);
+  assert.equal(isMutedWindow({}, "#quiet"), false);
+});
+
+test("makeHandler skips a message in a muted channel", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig({ apprise_url: url, rules: [{}] }, () => {});
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ channelMuted: true }));
   await new Promise((r) => setTimeout(r, 50));
   closeAll();
 

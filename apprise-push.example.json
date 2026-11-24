@@ -24,6 +24,7 @@
   "network_blacklist": [],
   "highlight_words": [],
   "ignore_services": true,
+  "ignore_muted": true,
 
   "priority": null,
   "timezone": "",
