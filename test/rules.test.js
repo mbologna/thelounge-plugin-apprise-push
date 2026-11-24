@@ -3,7 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { matchRule, evaluate } = require("../lib/rules");
+const { matchRule, evaluate, isServiceNick } = require("../lib/rules");
 const { compileConfig } = require("../lib/config");
 
 const cfg = (raw) => compileConfig(raw, () => {});
@@ -414,4 +414,12 @@ test("ignore_muted: false notifies for a muted channel", () => {
   const c = cfg({ ignore_muted: false, rules: [{}] });
   const r = evaluate(c, baseCtx({ channelMuted: true }), new Map());
   assert.equal(r.decision, "notify");
+});
+
+test("isServiceNick matches services and ignores the @server part", () => {
+  const c = svcCfg({}, { THELOUNGE_SERVICE_NICKS: "Q" });
+  assert.equal(isServiceNick(c, "NickServ"), true);
+  assert.equal(isServiceNick(c, "Q@CServe.quakenet.org"), true);
+  assert.equal(isServiceNick(c, "bob"), false);
+  assert.equal(isServiceNick(svcCfg({ ignore_services: false }), "NickServ"), false);
 });

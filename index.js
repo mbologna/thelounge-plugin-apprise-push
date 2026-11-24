@@ -5,7 +5,7 @@ const path = require("path");
 
 const { compileConfig } = require("./lib/config");
 const { stripIrcFormatting, isHighlight } = require("./lib/highlight");
-const { evaluate } = require("./lib/rules");
+const { evaluate, isServiceNick } = require("./lib/rules");
 const { expand, truncate } = require("./lib/template");
 const { sendApprise } = require("./lib/apprise");
 const { createDigestManager } = require("./lib/digest");
@@ -66,7 +66,9 @@ function makeHandler(
       networkName,
       cleanMessage,
       messageType,
-      isHl: isHighlight(cfg, myNick, cleanMessage),
+      // A service's line is never a highlight, wherever it lands (NickServ's
+      // "You are now logged in as <nick>"), matching thelounge-patched.
+      isHl: !isServiceNick(cfg, senderNick) && isHighlight(cfg, myNick, cleanMessage),
       now,
       clientKey,
       attachedCount,

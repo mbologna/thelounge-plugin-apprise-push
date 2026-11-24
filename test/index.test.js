@@ -407,3 +407,41 @@ test("makeHandler skips a message in a muted channel", async () => {
 
   assert.equal(received.length, 0);
 });
+
+test("makeHandler never treats a service's channel line as a highlight", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, rules: [{ highlight: true }, { channel: "#bots" }] },
+    () => {},
+    { THELOUNGE_SERVICE_NICKS: "Satsuki" }
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ senderNick: "Satsuki", rawMessage: "mynick: hi" }));
+  handler(
+    makeEvent({ target: "#bots", senderNick: "Satsuki", rawMessage: "mynick: queued" })
+  );
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 1, "only the #bots rule matched");
+  assert.equal(received[0].body, "Satsuki: mynick: queued");
+});
+
+test("makeHandler counts a service's line as a highlight with ignore_services off", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, ignore_services: false, rules: [{ highlight: true }] },
+    () => {},
+    { THELOUNGE_SERVICE_NICKS: "Satsuki" }
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ senderNick: "Satsuki", rawMessage: "mynick: hi" }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 1);
+});

@@ -167,17 +167,17 @@ The first six run before any rule, in the order listed, and no rule can override
 `cooldown`, `digest_window` and `highlight_words` are global defaults used once a rule
 matches.
 
-| Key                 | Default | Description                                                                                                                                                                                                                                        |
-| ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ignore_muted`      | `true`  | Skip messages in a channel or query window muted in The Lounge. Muting a network in The Lounge mutes all its windows. `false` notifies for muted windows too, for someone who mutes a channel in the browser but keeps a rule for it.              |
-| `ignore_services`   | `true`  | Skip private messages from network services: NickServ, ChanServ, MemoServ, OperServ, HostServ, BotServ, SaslServ and the comma-separated nicks in the `THELOUNGE_SERVICE_NICKS` environment variable. Channel messages from them are not affected. |
-| `away_only`         | `false` | Only notify when **no** The Lounge browser tab is connected, like ZNC's away-only mode.                                                                                                                                                            |
-| `nick_blacklist`    | `[]`    | Glob patterns. Messages from matching nicks are dropped. E.g. `["*bot*", "root"]`.                                                                                                                                                                 |
-| `network_blacklist` | `[]`    | Glob patterns. Messages from matching network names are dropped.                                                                                                                                                                                   |
-| `max_per_minute`    | `0`     | Global cap on notifications sent across **all** channels and private messages in a rolling 60-second window. `0` = disabled. Use it with `cooldown` against bursts when many channels highlight at once.                                           |
-| `cooldown`          | `0`     | Minimum seconds between two notifications for the same channel or private message. `0` = disabled. Checked when a rule matches; a rule can override it.                                                                                            |
-| `digest_window`     | `0`     | Seconds to batch messages for the same channel or private message into one notification. `0` = send at once. A rule can override it. See [Digest mode](#digest-mode-for-a-busy-channel).                                                           |
-| `highlight_words`   | `[]`    | Extra words or glob patterns that count as a highlight besides your nick, matched anywhere in the text: `prod*` matches "production".                                                                                                              |
+| Key                 | Default | Description                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ignore_muted`      | `true`  | Skip messages in a channel or query window muted in The Lounge. Muting a network in The Lounge mutes all its windows. `false` notifies for muted windows too, for someone who mutes a channel in the browser but keeps a rule for it.                                                                                                                                      |
+| `ignore_services`   | `true`  | Skip private messages from network services: NickServ, ChanServ, MemoServ, OperServ, HostServ, BotServ, SaslServ and the comma-separated nicks in the `THELOUNGE_SERVICE_NICKS` environment variable. A service's message never counts as a highlight either, in any window; its channel messages still match rules without `highlight`, such as `{ "channel": "#bots" }`. |
+| `away_only`         | `false` | Only notify when **no** The Lounge browser tab is connected, like ZNC's away-only mode.                                                                                                                                                                                                                                                                                    |
+| `nick_blacklist`    | `[]`    | Glob patterns. Messages from matching nicks are dropped. E.g. `["*bot*", "root"]`.                                                                                                                                                                                                                                                                                         |
+| `network_blacklist` | `[]`    | Glob patterns. Messages from matching network names are dropped.                                                                                                                                                                                                                                                                                                           |
+| `max_per_minute`    | `0`     | Global cap on notifications sent across **all** channels and private messages in a rolling 60-second window. `0` = disabled. Use it with `cooldown` against bursts when many channels highlight at once.                                                                                                                                                                   |
+| `cooldown`          | `0`     | Minimum seconds between two notifications for the same channel or private message. `0` = disabled. Checked when a rule matches; a rule can override it.                                                                                                                                                                                                                    |
+| `digest_window`     | `0`     | Seconds to batch messages for the same channel or private message into one notification. `0` = send at once. A rule can override it. See [Digest mode](#digest-mode-for-a-busy-channel).                                                                                                                                                                                   |
+| `highlight_words`   | `[]`    | Extra words or glob patterns that count as a highlight besides your nick, matched anywhere in the text: `prod*` matches "production".                                                                                                                                                                                                                                      |
 
 A [mute file](#mute-and-snooze) is checked before all of them, then The Lounge's own
 ignore list: a message from a user you `/ignore` in The Lounge 4.5 or later never
@@ -186,10 +186,11 @@ itself: the nick `al` highlights "al: ping" and "thanks @al", not "also".
 
 `ignore_services` uses the same list as
 [thelounge-patched](https://github.com/mbologna/thelounge-patched), whose
-service-queries patch sends these messages to the server window instead of a query
-window and reads the same `THELOUNGE_SERVICE_NICKS`. The plugin reads the variable from
-The Lounge's process, so set it once on the container or service. A `nick@server`
-sender, such as `Q@CServe.quakenet.org`, matches by its nick.
+service-queries patch sends services' private messages to the server window instead of
+a query window. Both read `THELOUNGE_SERVICE_NICKS` from The Lounge's process, so set it
+once on the container or service. A `nick@server` sender, such as
+`Q@CServe.quakenet.org`, matches by its nick. Without the service filter, a line such as
+NickServ's "You are now logged in as al" would count as a highlight on every connect.
 
 ### Rules
 
