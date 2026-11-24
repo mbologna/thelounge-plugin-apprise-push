@@ -161,6 +161,16 @@ function isChannelTarget(irc, target) {
   return /^[#&]/.test(target);
 }
 
+// Batch types that carry history replayed by the server or a bouncer, not new
+// messages: IRCv3 chathistory (ergo replays a private message's history when
+// The Lounge opens its query window) and ZNC's playback. They were notified,
+// or not, when they first arrived.
+const HISTORY_BATCHES = new Set(["chathistory", "draft/chathistory", "znc.in/playback"]);
+
+function isHistoryReplay(event) {
+  return HISTORY_BATCHES.has(event?.batch?.type);
+}
+
 const PATCHED = Symbol("apprisePushPatched");
 
 function setupNetworkHook(handle, getCfg) {
@@ -200,6 +210,7 @@ function setupNetworkHook(handle, getCfg) {
     network.irc.on("message", (event) => {
       if (event.from_server) return;
       if (event.type === "notice") return;
+      if (isHistoryReplay(event)) return;
 
       const isQuery = !isChannelTarget(network.irc, event.target);
       handle({
@@ -308,3 +319,4 @@ module.exports.onServerStart = () => {
 module.exports.makeHandler = makeHandler;
 module.exports.setupNetworkHook = setupNetworkHook;
 module.exports.isChannelTarget = isChannelTarget;
+module.exports.isHistoryReplay = isHistoryReplay;

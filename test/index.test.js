@@ -4,7 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { makeHandler, isChannelTarget } = require("../index");
+const { makeHandler, isHistoryReplay, isChannelTarget } = require("../index");
 const { compileConfig } = require("../lib/config");
 const { createMetrics } = require("../lib/metrics");
 
@@ -347,4 +347,18 @@ test("isChannelTarget treats # and & as channels without network info", () => {
   assert.equal(isChannelTarget(undefined, "#dev"), true);
   assert.equal(isChannelTarget({}, "&bitlbee"), true);
   assert.equal(isChannelTarget({}, "root"), false);
+});
+
+test("isHistoryReplay recognises messages replayed in a history batch", () => {
+  const live = { type: "privmsg", nick: "dave", target: "al", message: "hi" };
+  assert.equal(isHistoryReplay(live), false);
+  assert.equal(
+    isHistoryReplay({
+      ...live,
+      batch: { id: "1", type: "chathistory", params: ["dave"] },
+    }),
+    true
+  );
+  assert.equal(isHistoryReplay({ ...live, batch: { type: "znc.in/playback" } }), true);
+  assert.equal(isHistoryReplay({ ...live, batch: { type: "draft/multiline" } }), false);
 });
