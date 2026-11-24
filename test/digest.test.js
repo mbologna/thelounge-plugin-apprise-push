@@ -40,6 +40,15 @@ function makeNetwork(nick = "mynick", name = "Libera") {
   return { irc: { user: { nick } }, nick, name };
 }
 
+// Resolves once `received` holds `count` requests, or after `timeoutMs`: a fixed
+// sleep loses the race to the HTTP round trip when test files run in parallel.
+async function waitForRequests(received, count, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (received.length < count && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 function makeEvent(overrides = {}) {
   return {
     client: makeClient(),
@@ -60,7 +69,7 @@ test("digest_window:0 sends immediately (no batching)", async () => {
   const handler = makeHandler(() => cfg, new Map());
 
   handler(makeEvent());
-  await new Promise((r) => setTimeout(r, 50));
+  await waitForRequests(received, 1);
   closeAll();
 
   assert.equal(received.length, 1);
@@ -147,7 +156,7 @@ test("per-rule digest_window:0 bypasses digest even when the global default is s
 
   handler(makeEvent({ isQuery: true, target: "alice" }));
 
-  await new Promise((r) => setTimeout(r, 50));
+  await waitForRequests(received, 1);
   closeAll();
 
   assert.equal(received.length, 1, "PM rule's digest_window:0 sends immediately");
