@@ -40,6 +40,7 @@ function makeHandler(
     rawMessage,
     isQuery,
     messageType,
+    ignored = false,
   }) {
     const cfg = getCfg();
 
@@ -69,6 +70,7 @@ function makeHandler(
       clientKey,
       attachedCount,
       muted: muteState.isMuted(now),
+      ignored,
     };
 
     const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified, notifyLog);
@@ -223,6 +225,10 @@ function setupNetworkHook(handle, getCfg) {
           event.type === "action" ? `* ${event.nick} ${event.message}` : event.message,
         isQuery,
         messageType: event.type, // "privmsg" or "action"
+        // The Lounge drops messages from users on the network's /ignore list
+        // (Network.isIgnoredUser, The Lounge 4.5+); the plugin skips them too.
+        ignored:
+          typeof network.isIgnoredUser === "function" && network.isIgnoredUser(event),
       });
     });
 

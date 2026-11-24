@@ -362,3 +362,16 @@ test("isHistoryReplay recognises messages replayed in a history batch", () => {
   assert.equal(isHistoryReplay({ ...live, batch: { type: "znc.in/playback" } }), true);
   assert.equal(isHistoryReplay({ ...live, batch: { type: "draft/multiline" } }), false);
 });
+
+test("makeHandler skips a message from an ignored user", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig({ apprise_url: url, rules: [{}] }, () => {});
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ isQuery: true, target: "bob", senderNick: "bob", ignored: true }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 0);
+});

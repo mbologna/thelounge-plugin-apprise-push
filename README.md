@@ -178,9 +178,10 @@ matches.
 | `digest_window`     | `0`     | Seconds to batch messages for the same channel or private message into one notification. `0` = send at once. A rule can override it. See [Digest mode](#digest-mode-for-a-busy-channel).                                                           |
 | `highlight_words`   | `[]`    | Extra words or glob patterns that count as a highlight besides your nick, matched anywhere in the text: `prod*` matches "production".                                                                                                              |
 
-A [mute file](#mute-and-snooze) is checked before all of them. Your nick counts as a
-highlight when it appears as a word, as in The Lounge itself: the nick `al` highlights
-"al: ping" and "thanks @al", not "also".
+A [mute file](#mute-and-snooze) is checked before all of them, then The Lounge's own
+ignore list: a message from a user you `/ignore` in The Lounge 4.5 or later never
+notifies. Your nick counts as a highlight when it appears as a word, as in The Lounge
+itself: the nick `al` highlights "al: ping" and "thanks @al", not "also".
 
 `ignore_services` uses the same list as
 [thelounge-patched](https://github.com/mbologna/thelounge-patched), whose
@@ -513,6 +514,7 @@ Lounge's standard output:
 | ---------------------------- | -------------------------------------------------------- |
 | `→ notify`                   | A rule matched and a notification was sent or batched    |
 | `→ skip (muted)`             | `apprise-push.mute` is present and in effect             |
+| `→ skip (ignored)`           | The sender is on the network's `/ignore` list            |
 | `→ skip (service)`           | A private message from a service, with `ignore_services` |
 | `→ skip (away_only)`         | `away_only` is on and a browser tab is connected         |
 | `→ skip (nick_blacklist)`    | The sender matched `nick_blacklist`                      |

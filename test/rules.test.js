@@ -395,3 +395,10 @@ test("ignore_services: false notifies for service PMs", () => {
   const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "MemoServ" }), new Map());
   assert.equal(r.decision, "notify");
 });
+
+test("evaluate skips messages from users The Lounge ignores", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ ignored: true, isQuery: true }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "ignored");
+});
