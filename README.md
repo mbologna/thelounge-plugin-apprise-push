@@ -6,134 +6,105 @@
 [![license](https://img.shields.io/npm/l/thelounge-plugin-apprise-push.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/thelounge-plugin-apprise-push.svg)](package.json)
 
-A [TheLounge](https://thelounge.chat/) **server plugin** that forwards IRC highlights and
-private messages to [Apprise](https://github.com/caronc/apprise), so you get a push
-notification on your phone, desktop, or any of Apprise's 100+ services (Telegram,
-Pushover, ntfy, Gotify, Slack, Discord, …) even when no browser tab is open.
+thelounge-plugin-apprise-push is a server plugin for [The Lounge](https://thelounge.chat/)
+that sends IRC highlights and private messages to an
+[Apprise API](https://github.com/caronc/apprise-api) server, which delivers them to
+Telegram, Pushover, ntfy, Gotify, Slack, Discord or any other of Apprise's services. It
+runs inside The Lounge, so notifications arrive with no browser tab open.
 
-It runs entirely server-side, has **no runtime dependencies** (Node.js built-ins only), and
-is configured with a single JSON file that is **hot-reloaded** on change.
+An ordered list of rules decides which messages notify. A rule matches on channel,
+network, sender, message text, message type, highlight or private message, and can
+override the title, body, priority, cooldown, batching window and Apprise endpoint.
+Around the rules sit a per-channel cooldown, a global rate limit, an away-only mode, nick
+and network blacklists, a mute file and batching for busy channels. Failed sends are
+retried with backoff and can fall back to other Apprise instances. The configuration is
+one JSON file, reloaded when it changes. The plugin uses only Node.js built-ins.
 
----
-
-## Features
-
-- 🔔 **Highlights & PMs** out of the box, fully customisable via an ordered rule engine.
-- 🧩 **Rule engine** with glob matching on channel, network, sender nick, and **message
-  content** (`contains`); `notify` / `suppress` actions; first-match-wins ordering.
-- ✍️ **Per-rule overrides** for title, body, cooldown, and notification priority.
-- 🔔 **Notification priority** support for services that honour it (Pushover, ntfy, Gotify …).
-- 🔐 **Apprise authentication** with a bearer token or arbitrary custom headers.
-- 🔁 **Retry with exponential backoff** and a configurable request timeout.
-- 🚨 **Config-error alerts**: when Apprise rejects a notification (unknown key, bad token),
-  the error is logged and, at most once a day, reported to a separate Apprise key.
-- 😴 **Away-only mode**, per-context **cooldown**, a global **rate limit**, nick/network
-  **blacklists**, and extra **highlight words**.
-- 📦 **Digest mode**: batch messages for a busy channel or PM into one notification instead
-  of one per message.
-- 🔀 **Per-rule Apprise routing**: send specific rules (e.g. `#incidents`) to a different
-  Apprise endpoint than the global default.
-- 🔇 **Mute/snooze**: silence all notifications for a while, or indefinitely, without
-  touching the config file.
-- 📊 **Metrics**: in-memory notified/suppressed/skipped/failed counters, logged
-  periodically in debug mode.
-- 🌍 **Configurable timezone** for the `{time}` placeholder.
-- ♻️ **Hot-reload**: edit the config and changes apply within a second; no restart.
-- 🪶 **Zero runtime dependencies**, single small codebase, fully unit-tested.
-
----
-
-## Table of contents
+## Contents
 
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
-  - [Apprise connection](#apprise-connection)
-  - [Authentication](#authentication)
-  - [Fallback instances](#fallback-instances)
-  - [Config-error alerts](#config-error-alerts)
-  - [Delivery tuning](#delivery-tuning)
-  - [Notification text](#notification-text)
-  - [Global pre-filters](#global-pre-filters)
-  - [Rules](#rules)
 - [Examples](#examples)
 - [Running Apprise API](#running-apprise-api)
-- [Mute / snooze](#mute--snooze)
+- [Mute and snooze](#mute-and-snooze)
 - [Metrics](#metrics)
 - [Debugging](#debugging)
-- [Notes](#notes)
+- [Troubleshooting](#troubleshooting)
 - [How it works](#how-it-works)
 - [Development](#development)
 - [Why not an existing tool](#why-not-an-existing-tool)
 - [Versioning](#versioning)
-- [Related](#related)
-- [License](#license)
-
----
+- [Related projects](#related-projects)
+- [Licence](#licence)
 
 ## Requirements
 
-- TheLounge ≥ 4.0
-- Node.js ≥ 18
-- A running [Apprise API](https://github.com/caronc/apprise/wiki/api_overview) server with a
-  persistent notification configuration pre-loaded under a key (e.g. `chatnotifications`)
-
----
+- The Lounge 4.0 or later
+- Node.js 18 or later
+- An [Apprise API](https://github.com/caronc/apprise/wiki/api_overview) server with a
+  saved notification configuration under a key, such as `chatnotifications`
 
 ## Installation
 
-1. **Install the plugin:**
+1. Install the plugin:
 
    ```bash
    thelounge install thelounge-plugin-apprise-push
    ```
 
-2. **Create the config file** at `~/.thelounge/apprise-push.json` (see
-   [Configuration](#configuration) below). A starter file is shipped as
-   [`apprise-push.example.json`](apprise-push.example.json).
+2. Create `apprise-push.json` in The Lounge's home (see [Configuration](#configuration)).
+   [`apprise-push.example.json`](apprise-push.example.json) is a starting point.
 
-3. **Restart TheLounge** once to load the plugin. After that, config changes are picked up
-   automatically. No further restarts needed.
-
----
+3. Restart The Lounge once to load the plugin. Later changes to the configuration apply
+   without a restart.
 
 ## Configuration
 
-All options go in `$THELOUNGE_HOME/apprise-push.json` (usually `~/.thelounge/apprise-push.json`).
+All options go in `$THELOUNGE_HOME/apprise-push.json`, usually
+`~/.thelounge/apprise-push.json`. The file is watched: an edit applies within a second. If
+the new file is not valid JSON, the plugin keeps the previous configuration and logs an
+error. Unknown keys and values of the wrong type are logged as warnings when the file
+loads, and a bad value falls back to its default.
 
 ### Apprise connection
 
 | Key           | Type   | Description                                                                             |
-| ------------- | ------ | ----------------------------------------------------------------------------------------- |
+| ------------- | ------ | --------------------------------------------------------------------------------------- |
 | `apprise_url` | string | Full Apprise API notify endpoint, e.g. `"http://apprise:8000/notify/chatnotifications"` |
 
-The plugin POSTs `{ "title": "...", "body": "..." }` (plus an optional `"priority"` field)
-to this URL. The notification destinations are configured server-side in Apprise under the
-given key.
+The plugin POSTs `{ "title": "...", "body": "..." }`, plus `"priority"` when one is set,
+to this URL. Apprise sends it to the services configured under the key. The URL, here and
+in rules, must use `http://` or `https://`; any other scheme is rejected with a warning
+and nothing is sent to it. Without `apprise_url` at startup the plugin stays inactive.
 
 ### Authentication
 
-Optional. Use these when your Apprise API sits behind auth or a reverse proxy.
+Optional, for an Apprise API behind authentication or a reverse proxy.
 
 | Key               | Type   | Default | Description                                                                |
 | ----------------- | ------ | ------- | -------------------------------------------------------------------------- |
-| `apprise_token`   | string | `""`    | Shorthand, sent as `Authorization: Bearer <token>`.                        |
+| `apprise_token`   | string | `""`    | Sent as `Authorization: Bearer <token>`.                                   |
 | `apprise_headers` | object | `{}`    | Arbitrary extra HTTP headers. Overrides the bearer header on key conflict. |
-
-### Fallback instances
-
-| Key                      | Type  | Default | Description |
-| ------------------------ | ----- | ------- | ----------- |
-| `apprise_fallback_bases` | array | `[]`    | Base URLs of other Apprise instances serving the same keys, e.g. `["http://apprise-2:8000"]`. When a send fails, each is tried on the same `/notify/<key>` path (rule URLs included) before the next retry, so one instance being down loses nothing. Same token and headers. |
 
 ```json
 "apprise_headers": { "Authorization": "Basic dXNlcjpwYXNz", "X-Source": "thelounge" }
 ```
 
+A header value that is not a string is ignored with a warning. With an `Authorization`
+header and an `http://` `apprise_url`, the plugin warns that the credential travels in
+plain text.
+
+### Fallback instances
+
+| Key                      | Type  | Default | Description                                                                                                                                                                                                                                                                   |
+| ------------------------ | ----- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apprise_fallback_bases` | array | `[]`    | Base URLs of other Apprise instances serving the same keys, e.g. `["http://apprise-2:8000"]`. When a send fails, each is tried on the same `/notify/<key>` path (rule URLs included) before the next retry, so one instance being down loses nothing. Same token and headers. |
+
 ### Config-error alerts
 
-| Key         | Type   | Default           | Description |
-| ----------- | ------ | ----------------- | ----------- |
+| Key         | Type   | Default           | Description                                                                                                       |
+| ----------- | ------ | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `alert_key` | string | `"system-alerts"` | Apprise key that is told when Apprise answers a notification with a client error (4xx). `""` turns the alert off. |
 
 A 4xx means Apprise was reached and refused the request: the key has no configuration
@@ -143,8 +114,8 @@ message (`424`). Retrying won't fix any of these, so the plugin:
 1. does not retry (the fallback instances are still tried once);
 2. logs an error naming the endpoint and the status, on every failed notification, with or
    without `debug`;
-3. sends a `warning` to `alert_key`, at most once every 24 hours per TheLounge process. The
-   alert goes to the failing URL with its last path segment replaced (`/notify/irc` →
+3. sends a `warning` to `alert_key`, at most once every 24 hours per The Lounge process.
+   The alert goes to the failing URL with its last path segment replaced (`/notify/irc` →
    `/notify/system-alerts`), then to the same path on each fallback instance, with the
    same token and headers. It is sent once, without retries, and a failed alert is only
    logged.
@@ -156,48 +127,67 @@ send no alert. Nothing is sent about the alert key itself.
 
 ### Delivery tuning
 
-| Key           | Type   | Default | Description                                                                                        |
-| ------------- | ------ | ------- | -------------------------------------------------------------------------------------------------- |
-| `timeout`     | number | `10000` | Milliseconds before a single Apprise request is aborted.                                           |
+| Key           | Type   | Default | Description                                                                                                                                                                                   |
+| ------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`     | number | `10000` | Milliseconds before a single Apprise request is aborted.                                                                                                                                      |
 | `retries`     | number | `2`     | Extra attempts after the first on transient failure (timeout, 5xx, 408, 429, network). `0` disables retries. Other 4xx answers are [config errors](#config-error-alerts) and are not retried. |
-| `retry_delay` | number | `500`   | Base backoff in ms; grows exponentially (`500 → 1000 → 2000 …`).                                   |
+| `retry_delay` | number | `500`   | Base backoff in ms; it doubles on each attempt (`500 → 1000 → 2000 …`).                                                                                                                       |
+
+After the last attempt the notification is dropped and the error logged.
 
 ### Notification text
 
 | Key           | Default                        | Description                                                                                                                                                                     |
-| ------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `title_pm`    | `"PM from {nick} [{network}]"` | Title template for private message notifications.                                                                                                                               |
 | `title_chan`  | `"[{network}] {channel}"`      | Title template for channel notifications.                                                                                                                                       |
 | `body`        | `"{nick}: {message}"`          | Notification body template.                                                                                                                                                     |
 | `body_length` | `100`                          | Truncate `{message}` to this many characters. `0` = unlimited.                                                                                                                  |
 | `priority`    | `null`                         | Notification priority passed to Apprise. `null` = omit. Accepts a number or `"min"` / `"low"` / `"normal"` / `"high"` / `"max"`. Honoured by Pushover, ntfy, Gotify and others. |
-| `timezone`    | `""`                           | IANA timezone name for the `{time}` placeholder, e.g. `"America/New_York"`. Empty = system timezone.                                                                            |
+| `timezone`    | `""`                           | IANA time zone for the `{time}` placeholder, e.g. `"America/New_York"`. Empty = the system time zone.                                                                           |
 
-**Keyword expansion**: these placeholders are replaced in `title_pm`, `title_chan`, `body`,
-and per-rule `title`/`body` overrides:
+These placeholders work in `title_pm`, `title_chan`, `body` and the per-rule `title` and
+`body`. An unknown placeholder is left as written, so a typo shows in the notification.
 
-| Keyword     | Value                                                                                    |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| `{channel}` | Channel name or sender nick (for PMs)                                                    |
-| `{nick}`    | Message sender                                                                           |
-| `{network}` | IRC network name                                                                         |
-| `{mynick}`  | Your own nick on that network                                                            |
-| `{time}`    | Time the message was received (IANA timezone from `timezone` config, or system timezone) |
-| `{message}` | Message text (IRC formatting stripped, truncated to `body_length`)                       |
+| Placeholder | Value                                                                |
+| ----------- | -------------------------------------------------------------------- |
+| `{channel}` | Channel name, or the sender's nick for a private message             |
+| `{nick}`    | Message sender                                                       |
+| `{network}` | IRC network name                                                     |
+| `{mynick}`  | Your own nick on that network                                        |
+| `{time}`    | Time the message was received, in `timezone`                         |
+| `{message}` | Message text with IRC formatting removed, truncated to `body_length` |
+
+A `/me` action notifies like a message, with its text prefixed by `* nick`. `body_length`
+counts characters as people read them, so an emoji at the cut is never split.
 
 ### Global pre-filters
 
-These apply before any rule is evaluated. They are fast exits.
+The first five run before any rule, in the order listed, and no rule can override them.
+`cooldown`, `digest_window` and `highlight_words` are global defaults used once a rule
+matches.
 
-| Key                 | Default | Description                                                                                                                                                                                                 |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `away_only`         | `false` | Only notify when **no** TheLounge browser tabs are connected. Equivalent to ZNC's away-only mode.                                                                                                           |
-| `cooldown`          | `0`     | Minimum seconds between two notifications for the same context (channel or PM). `0` = disabled.                                                                                                             |
-| `max_per_minute`    | `0`     | Global cap on notifications sent across **all** contexts combined in a rolling 60s window. `0` = disabled. Use this alongside `cooldown` to avoid notification storms when many channels highlight at once. |
-| `digest_window`     | `0`     | Seconds to batch messages for the same context into a single notification instead of sending one per message. `0` = disabled (send immediately). Can be overridden per-rule.                                |
-| `nick_blacklist`    | `[]`    | Glob patterns. Messages from matching nicks are silently dropped. E.g. `["*bot*", "ChanServ"]`.                                                                                                             |
-| `network_blacklist` | `[]`    | Glob patterns. Messages from matching network names are silently dropped.                                                                                                                                   |
-| `highlight_words`   | `[]`    | Extra words/patterns that count as a highlight in addition to your own nick. Glob patterns accepted.                                                                                                        |
+| Key                 | Default | Description                                                                                                                                                                                                                                        |
+| ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ignore_services`   | `true`  | Skip private messages from network services: NickServ, ChanServ, MemoServ, OperServ, HostServ, BotServ, SaslServ and the comma-separated nicks in the `THELOUNGE_SERVICE_NICKS` environment variable. Channel messages from them are not affected. |
+| `away_only`         | `false` | Only notify when **no** The Lounge browser tab is connected, like ZNC's away-only mode.                                                                                                                                                            |
+| `nick_blacklist`    | `[]`    | Glob patterns. Messages from matching nicks are dropped. E.g. `["*bot*", "root"]`.                                                                                                                                                                 |
+| `network_blacklist` | `[]`    | Glob patterns. Messages from matching network names are dropped.                                                                                                                                                                                   |
+| `max_per_minute`    | `0`     | Global cap on notifications sent across **all** channels and private messages in a rolling 60-second window. `0` = disabled. Use it with `cooldown` against bursts when many channels highlight at once.                                           |
+| `cooldown`          | `0`     | Minimum seconds between two notifications for the same channel or private message. `0` = disabled. Checked when a rule matches; a rule can override it.                                                                                            |
+| `digest_window`     | `0`     | Seconds to batch messages for the same channel or private message into one notification. `0` = send at once. A rule can override it. See [Digest mode](#digest-mode-for-a-busy-channel).                                                           |
+| `highlight_words`   | `[]`    | Extra words or glob patterns that count as a highlight besides your nick, matched anywhere in the text: `prod*` matches "production".                                                                                                              |
+
+A [mute file](#mute-and-snooze) is checked before all of them. Your nick counts as a
+highlight when it appears as a word, as in The Lounge itself: the nick `al` highlights
+"al: ping" and "thanks @al", not "also".
+
+`ignore_services` uses the same list as
+[thelounge-patched](https://github.com/mbologna/thelounge-patched), whose
+service-queries patch sends these messages to the server window instead of a query
+window and reads the same `THELOUNGE_SERVICE_NICKS`. The plugin reads the variable from
+The Lounge's process, so set it once on the container or service. A `nick@server`
+sender, such as `Q@CServe.quakenet.org`, matches by its nick.
 
 ### Rules
 
@@ -205,49 +195,44 @@ These apply before any rule is evaluated. They are fast exits.
 "rules": [ <rule>, <rule>, ... ]
 ```
 
-Rules are evaluated **in order**; the **first matching rule wins**. If no rule matches, no
-notification is sent.
+Rules are evaluated **in order** and the **first matching rule wins**. If no rule
+matches, no notification is sent. The default is
+`[{ "highlight": true }, { "pm": true }]`: highlights and private messages.
 
-Each rule is a JSON object. All specified conditions must be true (AND logic). If a rule has
-no conditions it matches everything.
+A rule is a JSON object. All its conditions must hold; a rule with no conditions matches
+every message. Glob patterns accept `*` (any sequence) and `?` (any one character) and
+ignore case.
 
 #### Rule conditions
 
-All conditions are AND'd together. A rule with no conditions matches every message.
+| Key            | Type               | Description                                                                                                                                                                                               |
+| -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `channel`      | string \| string[] | Glob pattern(s) for the channel name. If set, the rule only matches channel messages in a matching channel.                                                                                               |
+| `pm`           | boolean            | `true` → only private messages. `false` → only channel messages. Omit to match both.                                                                                                                      |
+| `highlight`    | boolean            | `true` → only messages that contain your nick or a `highlight_words` entry.                                                                                                                               |
+| `network`      | string \| string[] | Glob pattern(s) for the network name.                                                                                                                                                                     |
+| `nick`         | string \| string[] | Glob pattern(s) for the **sender** nick.                                                                                                                                                                  |
+| `contains`     | string \| string[] | Glob pattern(s) matched anywhere in the message text, after IRC formatting is removed. One match is enough. E.g. `["*deploy*", "*alert*"]`. Patterns match substrings: `"*down*"` matches "shutdown" too. |
+| `message_type` | string             | `"privmsg"` → only regular messages, `"action"` → only `/me` actions. Omit to match both.                                                                                                                 |
 
-| Key            | Type               | Description                                                                                                                                                                                                                                     |
-| -------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `channel`      | string \| string[] | Glob pattern(s) for the channel name. If set, the rule only matches channel messages in a matching channel.                                                                                                                                     |
-| `pm`           | boolean            | `true` → only match private messages. `false` → only match channel messages. Omit to match both.                                                                                                                                                |
-| `highlight`    | boolean            | `true` → only match if the message contains your nick or a `highlight_words` entry.                                                                                                                                                             |
-| `network`      | string \| string[] | Glob pattern(s) for the network name.                                                                                                                                                                                                           |
-| `nick`         | string \| string[] | Glob pattern(s) for the **sender** nick.                                                                                                                                                                                                        |
-| `contains`     | string \| string[] | Glob pattern(s) matched against the message text (after stripping IRC formatting). Any one pattern matching is sufficient. E.g. `["*deploy*", "*alert*"]`. Note: patterns are substring-matched (`"*down*"` matches "shutdown" and "password"). |
-| `message_type` | string             | `"privmsg"` to match only regular messages, `"action"` to match only `/me` actions. Omit to match both.                                                                                                                                         |
+#### Rule action and overrides
 
-#### Rule action & overrides
+| Key             | Default    | Description                                                                                                                                                                               |
+| --------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`        | `"notify"` | `"notify"` sends a notification. `"suppress"` stops evaluation and sends nothing.                                                                                                         |
+| `title`         | _(global)_ | Title template for this rule. Omit to use `title_pm` (private messages) or `title_chan` (channels).                                                                                       |
+| `body`          | _(global)_ | Body template for this rule. Omit to use the global `body`.                                                                                                                               |
+| `cooldown`      | _(global)_ | Cooldown in seconds for messages this rule matches. `0` always notifies. The timer restarts on each notification sent; skipped messages don't restart it.                                 |
+| `priority`      | _(global)_ | Priority for this rule; same values as the global `priority`.                                                                                                                             |
+| `apprise_url`   | _(global)_ | Send this rule's notifications to another Apprise endpoint or key. Validated like the global one. Token, headers, `timeout`, `retries`, `retry_delay` and fallback instances stay global. |
+| `digest_window` | _(global)_ | Batching window in seconds for this rule. `0` always sends at once.                                                                                                                       |
 
-| Key             | Default    | Description                                                                                                                                                                                                                                                      |
-| --------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`        | `"notify"` | `"notify"` sends a notification. `"suppress"` blocks further evaluation and sends nothing.                                                                                                                                                                       |
-| `title`         | _(global)_ | Override the title template for this rule. Omit to fall back to `title_pm` (PMs) or `title_chan` (channels).                                                                                                                                                     |
-| `body`          | _(global)_ | Override the body template for this rule. Omit to fall back to the global `body`.                                                                                                                                                                                |
-| `cooldown`      | _(global)_ | Per-rule cooldown in seconds. Overrides the global `cooldown` for messages matched by this rule. Use `0` to always notify. The timer resets on each sent notification; skipped messages do not reset it.                                                         |
-| `priority`      | _(global)_ | Per-rule priority. Overrides the global `priority` for this rule. Same values as the global `priority` field.                                                                                                                                                    |
-| `apprise_url`   | _(global)_ | Route notifications matched by this rule to a different Apprise endpoint/key than the global `apprise_url`. Validated the same way (must be `http://` or `https://`). Still uses the global `apprise_token`/`apprise_headers`/`timeout`/`retries`/`retry_delay`. |
-| `digest_window` | _(global)_ | Per-rule digest window in seconds. Overrides the global `digest_window` for messages matched by this rule. Use `0` to always send immediately.                                                                                                                   |
-
-Glob patterns support `*` (any sequence) and `?` (any single character), case-insensitive.
-
-> **Rule ordering tip:** Put `suppress` rules before catch-all `notify` rules. Specific
-> conditions before broad ones. Global pre-filters (`away_only`, blacklists) always run first
-> regardless of rule order.
-
----
+Put `suppress` rules before catch-all `notify` rules, and specific conditions before
+broad ones.
 
 ## Examples
 
-### Default: highlights and PMs
+### Highlights and private messages (the default)
 
 ```json
 "rules": [
@@ -256,7 +241,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### All messages in a channel
+### Every message in a channel
 
 ```json
 "rules": [
@@ -266,7 +251,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Multiple channels: all messages
+### Every message in several channels
 
 ```json
 "rules": [
@@ -276,7 +261,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Highlights only in specific channels
+### Highlights only in some channels
 
 ```json
 "rules": [
@@ -286,7 +271,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Custom message template for a rule
+### A custom template for one rule
 
 ```json
 "rules": [
@@ -296,7 +281,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Suppress a noisy channel before a catch-all
+### A noisy channel suppressed before a catch-all
 
 ```json
 "rules": [
@@ -306,20 +291,21 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-### Suppress bots everywhere
+### Bots silenced everywhere
 
 ```json
-"nick_blacklist": ["*bot*", "ChanServ", "NickServ"],
+"nick_blacklist": ["*bot*", "root"],
 "rules": [
   { "highlight": true },
   { "pm": true }
 ]
 ```
 
-> `nick_blacklist` is a global pre-filter, so no rule can override it.
-> If you need per-channel bot suppression, use a suppress rule instead.
+`nick_blacklist` is a pre-filter, so no rule can override it. To silence a bot in one
+channel only, use a `suppress` rule with `nick` and `channel`. Services are already
+skipped in private messages by `ignore_services`.
 
-### Per-network rule
+### A rule per network
 
 ```json
 "rules": [
@@ -339,7 +325,7 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-`prod*` will match "production", "prod-alert", etc.
+`prod*` matches "production", "prod-alert" and so on.
 
 ### Keyword alerts in a channel
 
@@ -351,9 +337,10 @@ Glob patterns support `*` (any sequence) and `?` (any single character), case-in
 ]
 ```
 
-Sends a notification whenever `#ops` has a message containing "down", "alert", or starting with "deploy", in addition to the usual highlights and PMs.
+Any message in `#ops` containing "down" or "alert", or starting with "deploy", notifies,
+on top of the usual highlights and private messages.
 
-### Per-rule cooldown: silence a noisy channel, never suppress PMs
+### Per-rule cooldown: a throttled channel, private messages always through
 
 ```json
 "rules": [
@@ -363,9 +350,10 @@ Sends a notification whenever `#ops` has a message containing "down", "alert", o
 ]
 ```
 
-PMs are always delivered immediately. Highlights in `#general` are throttled to one every 5 minutes. Other highlights use the global `cooldown`.
+Private messages always notify at once. Highlights in `#general` notify at most once
+every 5 minutes. Other highlights use the global `cooldown`.
 
-### Filter by message type
+### Only `/me` actions
 
 ```json
 "rules": [
@@ -375,9 +363,10 @@ PMs are always delivered immediately. Highlights in `#general` are throttled to 
 ]
 ```
 
-Only `/me` actions in `#dev` trigger a notification (e.g. `* alice pushes to main`), not regular messages. Highlights and PMs still work as normal.
+In `#dev` only actions notify (`* alice pushes to main`), not regular messages.
+Highlights and private messages work as usual.
 
-### Priority notifications for critical channels
+### Priority for a critical channel
 
 ```json
 "priority": "low",
@@ -388,9 +377,10 @@ Only `/me` actions in `#dev` trigger a notification (e.g. `* alice pushes to mai
 ]
 ```
 
-All notifications default to low priority, but messages in `#incidents` that contain "CRITICAL" are sent at high priority.
+Notifications are low priority, except messages in `#incidents` containing "CRITICAL",
+which are high.
 
-### Global rate limit to avoid notification storms
+### A global rate limit
 
 ```json
 "max_per_minute": 10,
@@ -400,7 +390,8 @@ All notifications default to low priority, but messages in `#incidents` that con
 ]
 ```
 
-Even if highlights fire in many channels at once, no more than 10 notifications are sent per rolling 60-second window. Combine with `cooldown` (per-context) for layered protection.
+However many channels highlight at once, at most 10 notifications go out in any
+60 seconds. Combine it with `cooldown` for a per-channel limit too.
 
 ### Digest mode for a busy channel
 
@@ -413,9 +404,16 @@ Even if highlights fire in many channels at once, no more than 10 notifications 
 ]
 ```
 
-Messages in `#general` are batched: the first one starts a 30s timer, and everything else matched for that channel within the window is folded into a single notification when it fires. PMs override `digest_window` back to `0` so they're always delivered immediately; other highlights use the global `digest_window`.
+The first message matched in `#general` starts a 30-second window. Every message the
+rule matches there before it ends goes into one notification, titled with the count
+(`[Libera] #general (12 messages)`) and listing the first 20 messages followed by
+`… and N more`. A batch counts once against `max_per_minute`. Private messages set
+`digest_window` back to `0` and notify at once; other highlights use the global window.
 
-### Route a channel to a different Apprise endpoint
+Batches are held in memory: a batch that hasn't been sent is lost when The Lounge stops.
+A batch whose window ends while notifications are muted is dropped.
+
+### A channel routed to another Apprise endpoint
 
 ```json
 "apprise_url": "https://apprise.example.com/notify/general",
@@ -426,9 +424,10 @@ Messages in `#general` are batched: the first one starts a 30s timer, and everyt
 ]
 ```
 
-`#incidents` notifications go to a separate Apprise key (e.g. one wired to a pager/SMS service), while everything else uses the default `apprise_url`.
+`#incidents` goes to a separate Apprise key, for example one wired to a pager or SMS
+service; everything else uses the default `apprise_url`.
 
-### Authenticated Apprise behind a proxy
+### Apprise behind an authenticating proxy
 
 ```json
 "apprise_url": "https://apprise.example.com/notify/chatnotifications",
@@ -436,8 +435,6 @@ Messages in `#general` are batched: the first one starts a 30s timer, and everyt
 "timeout": 5000,
 "retries": 3
 ```
-
----
 
 ## Running Apprise API
 
@@ -447,202 +444,168 @@ The quickest way to run the Apprise API server:
 docker run -p 8000:8000 caronc/apprise:latest
 ```
 
-Load your notification URLs into Apprise under a key (e.g. `chatnotifications`) via the web
-UI or API, then set `apprise_url` to `"http://apprise:8000/notify/chatnotifications"`.
+Save your notification URLs in Apprise under a key, such as `chatnotifications`, through
+its web interface or API, then set `apprise_url` to
+`"http://apprise:8000/notify/chatnotifications"`. The
+[Apprise wiki](https://github.com/caronc/apprise/wiki) lists the supported services.
 
-See the [Apprise wiki](https://github.com/caronc/apprise/wiki) for the full list of supported
-services (Telegram, Pushover, Slack, Discord, Gotify, ntfy, and many more).
+## Mute and snooze
 
----
+A file named `apprise-push.mute` next to the configuration
+(`$THELOUNGE_HOME/apprise-push.mute`) silences all notifications without editing
+`apprise-push.json`. It is watched like the configuration, so a change applies within a
+second.
 
-## Mute / snooze
-
-Silence **all** notifications temporarily, without editing `apprise-push.json` (and
-without tripping its validation/hot-reload path for an unrelated change), by creating a
-file named `apprise-push.mute` in the same directory as the config
-(`$THELOUNGE_HOME/apprise-push.mute`). It's watched the same way the config is, so changes
-take effect within a second.
-
-| File content                                       | Effect                                                          |
-| --------------------------------------------------- | ---------------------------------------------------------------- |
-| _(file doesn't exist)_                             | Not muted, normal operation.                                   |
-| _(empty file)_                                     | Muted indefinitely, until the file is removed.                  |
-| A number, e.g. `30`                                | Muted for that many **minutes** from when the file was written. |
-| An ISO 8601 timestamp, e.g. `2026-10-08T06:00:00Z` | Muted until that absolute time.                                 |
+| File content                                       | Effect                                                               |
+| -------------------------------------------------- | -------------------------------------------------------------------- |
+| _(no file)_                                        | Not muted.                                                           |
+| _(empty file)_                                     | Muted until the file is removed.                                     |
+| A number, e.g. `30`                                | Muted for that many **minutes** from when the file was last written. |
+| An ISO 8601 timestamp, e.g. `2026-10-08T06:00:00Z` | Muted until that time.                                               |
 
 ```bash
 # Snooze for 30 minutes
 echo 30 > ~/.thelounge/apprise-push.mute
 
-# Mute indefinitely
+# Mute until the file is removed
 touch ~/.thelounge/apprise-push.mute
 
-# Resume immediately
+# Resume now
 rm ~/.thelounge/apprise-push.mute
 ```
 
-While muted, every message evaluates to `→ skip (muted)` in debug logs (see
-[Debugging](#debugging)): rules, cooldown, and the rate limit are not evaluated at all; mute
-is checked first.
-
----
+The plugin reads the file again on every change and at startup. A snooze counts from the
+file's modification time, so restarting The Lounge doesn't extend it. The log says when a
+mute starts, when a snooze ends and when the file is removed. While muted, every message
+is skipped with `→ skip (muted)` in the debug log, before any other filter or rule runs.
 
 ## Metrics
 
-The plugin keeps simple in-memory counters, `notified`, `suppressed`, `skipped`, and
-`sendFailed`, reset whenever TheLounge restarts (there's no persistence, consistent with
-the rest of the plugin). With `"debug": true`, a snapshot is logged every 5 minutes:
+The plugin counts outcomes in memory: `notified`, `suppressed`, `skipped` and
+`sendFailed`. The counters reset when The Lounge restarts. With `"debug": true` it logs them
+every 5 minutes:
 
 ```
 [apprise-push] metrics: { notified: 42, suppressed: 3, skipped: 118, sendFailed: 1 }
 ```
 
-There's no separate metrics endpoint or export format. This is meant as a lightweight,
-zero-dependency sanity check (e.g. "is Apprise actually failing, or am I just not getting
-highlighted"), not a monitoring integration.
-
----
+There is no metrics endpoint or export. The counters answer questions such as whether
+Apprise is failing or the rules match nothing.
 
 ## Debugging
 
-Set `"debug": true` in the config. Each incoming message will log its evaluation result to
-TheLounge's stdout:
+With `"debug": true` in the configuration, the plugin logs each message's outcome to The
+Lounge's standard output:
 
 ```
 [apprise-push] chan "#dev" from "alice" hl=true → notify
 [apprise-push] → "[Libera] #dev" / "alice: hey yourname, take a look"
-[apprise-push] Apprise → HTTP 200
+[apprise-push] Apprise http://apprise:8000 → HTTP 200
 
 [apprise-push] chan "#general" from "bob" hl=false → skip (cooldown)
 [apprise-push] chan "#random" from "eve" hl=false → skip (no_match)
 [apprise-push] PM "dave" from "dave" hl=false → skip (away_only)
-[apprise-push] chan "#spam" from "bot" hl=false → suppress (suppress)
+[apprise-push] PM "NickServ" from "NickServ" hl=false → skip (service)
+[apprise-push] chan "#spam" from "bot" hl=false → suppress (rule)
 ```
 
-Possible outcomes and their meanings:
-
-| Output                       | Meaning                                              |
-| ----------------------------- | ------------------------------------------------------ |
-| `→ notify`                   | A rule matched and a notification was sent           |
-| `→ skip (muted)`             | `apprise-push.mute` is present and still in effect   |
-| `→ skip (away_only)`         | `away_only: true` and a browser tab is connected     |
-| `→ skip (nick_blacklist)`    | Sender matched a `nick_blacklist` pattern            |
-| `→ skip (network_blacklist)` | Network matched a `network_blacklist` pattern        |
-| `→ skip (cooldown)`          | Within the cooldown window for this context          |
-| `→ skip (rate_limit)`        | `max_per_minute` already reached for this 60s window |
-| `→ skip (no_match)`          | No rule matched, message was silently dropped       |
-| `→ suppress (suppress)`      | A rule with `action: "suppress"` matched             |
-
-Unknown config keys and bad value types are also reported as warnings at load time.
-
----
-
-## Notes
-
-- **`/me` actions** (`* nick does something`) are included as triggers. The action text is
-  prefixed with `* nick` in the notification body.
-- **Cooldown** is tracked independently per context (each channel and each PM thread has its
-  own timer).
-- **Retries** apply to transient failures (timeouts, network errors, `5xx`, `408` and `429`)
-  with exponential backoff; the request is dropped after the last attempt and the error is
-  logged. Other `4xx` answers are not retried; see [Config-error alerts](#config-error-alerts).
-- **Hot-reload**: `apprise-push.json` is watched for changes. Edits take effect within a
-  second; no TheLounge restart required. If the file is invalid JSON the previous config is
-  kept and an error is logged.
-- **Reconnects** are handled automatically: the plugin re-attaches to a network's IRC
-  connection on reconnection.
-- **`apprise_url` (global and per-rule)** must be `http://` or `https://`; any other scheme
-  (e.g. `ftp://`, `file://`) is rejected at load time with a warning and the plugin stays
-  inactive for that URL. If an `Authorization` header (from `apprise_token` or
-  `apprise_headers`) is set alongside an `http://` (not `https://`) `apprise_url`, a warning
-  is logged: the credential travels in plaintext.
-- **Digest mode** buffers pending batches **in memory only**; a buffer that hasn't flushed
-  yet is lost on process exit/restart (consistent with the rest of the plugin, nothing is
-  persisted to disk).
-- **Mute** and **metrics** are also in-memory only: mute state is re-derived from
-  `apprise-push.mute` on every change (so it survives TheLounge restarts as long as the file
-  is still there), but metrics counters reset to zero on every restart.
-- The plugin has **no runtime npm dependencies** beyond Node.js built-ins.
-
----
+| Output                       | Meaning                                                  |
+| ---------------------------- | -------------------------------------------------------- |
+| `→ notify`                   | A rule matched and a notification was sent or batched    |
+| `→ skip (muted)`             | `apprise-push.mute` is present and in effect             |
+| `→ skip (service)`           | A private message from a service, with `ignore_services` |
+| `→ skip (away_only)`         | `away_only` is on and a browser tab is connected         |
+| `→ skip (nick_blacklist)`    | The sender matched `nick_blacklist`                      |
+| `→ skip (network_blacklist)` | The network matched `network_blacklist`                  |
+| `→ skip (rate_limit)`        | `max_per_minute` was reached in this 60-second window    |
+| `→ skip (cooldown)`          | Within the cooldown for this channel or private message  |
+| `→ skip (no_match)`          | No rule matched                                          |
+| `→ suppress (rule)`          | A rule with `"action": "suppress"` matched               |
 
 ## Troubleshooting
 
-**No notifications at all**
+### No notifications at all
 
-1. Set `"debug": true`, check that messages are reaching the plugin and what decision is being logged.
-2. Verify `apprise_url` is reachable from the server: `curl -X POST <apprise_url> -H "Content-Type: application/json" -d '{"title":"test","body":"test"}'`.
-3. Check TheLounge logs at startup for `[apprise-push] started`; if absent, the config file was not found or failed to parse.
-4. If you see `→ skip (no_match)`, your rules don't match. The default rules only notify on highlights and PMs; add a broader rule if needed.
+1. Set `"debug": true` and check that messages reach the plugin and what it decides.
+2. Check that `apprise_url` is reachable from the server:
+   `curl -X POST <apprise_url> -H "Content-Type: application/json" -d '{"title":"test","body":"test"}'`.
+3. Look for `[apprise-push] started` in The Lounge's log at startup. Without it, the
+   configuration file was missing, failed to parse or had no `apprise_url`.
+4. `→ skip (no_match)` means no rule matched. The default rules notify only on highlights
+   and private messages; add a broader rule if needed.
 
-**Notifications fire but `{time}` shows the wrong timezone**
+### A service's private messages no longer notify
 
-- Set `"timezone": "Your/Timezone"` using an [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Invalid values fall back to the server's system timezone and a warning is logged at load time.
+`ignore_services` is on by default. Set `"ignore_services": false` to notify for them
+again, for example for MemoServ's new-memo messages.
 
-**Notifications stop after a while**
+### `{time}` shows the wrong time zone
 
-- If `cooldown` is set, check that enough time has passed. Debug output will show `→ skip (cooldown)`.
-- Cooldown is per-context (per channel and per PM thread) and resets only when a notification is actually sent, not when messages are skipped.
+Set `"timezone"` to an
+[IANA time zone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). An
+invalid name falls back to the system time zone, with a warning when the file loads.
 
-**Hot-reload not working**
+### Notifications stop after a while
 
-- Some network filesystems and container volume mounts don't deliver `fs.watch` events. In those cases, restart TheLounge after editing the config.
-- If the new config has a JSON syntax error, the previous config is kept and an error is logged.
+With `cooldown` set, the debug log shows `→ skip (cooldown)` until enough time has
+passed. The cooldown is per channel and per private message, and restarts only when a
+notification is sent.
 
-**Apprise request fails / retries exhausted**
+### Changes to the configuration are ignored
 
-- Increase `timeout` if your Apprise server is slow to respond.
-- Check Apprise server logs for errors; the plugin logs the HTTP status code on failure.
-- Use `"debug": true` to see individual attempt results.
+Some network file systems and container volume mounts don't deliver `fs.watch` events;
+restart The Lounge after editing. If the new file has a JSON syntax error, the plugin
+keeps the previous configuration and logs an error.
 
-**`Apprise answered HTTP 404 for …` in the log**
+### Apprise requests fail after the retries
 
-- The key in that URL has no configuration on that Apprise instance. Add it in Apprise, or
-  fix the key in `apprise_url` (or the rule's `apprise_url`). With `apprise_fallback_bases`,
-  every instance needs the key. `401`/`403` point at `apprise_token` or `apprise_headers`.
-- The first such error of the day is also sent to `alert_key` (`system-alerts` by default);
-  if that key is missing too, the log shows `could not send the config-error alert`.
+Raise `timeout` if the Apprise server is slow to answer, and check its logs. The plugin
+logs the HTTP status of the failure; `"debug": true` logs every attempt.
 
----
+### `Apprise answered HTTP 404 for …` in the log
+
+The key in that URL has no configuration on that Apprise instance. Add it in Apprise, or
+fix the key in `apprise_url` (or the rule's `apprise_url`). With `apprise_fallback_bases`,
+every instance needs the key. `401` or `403` points at `apprise_token` or
+`apprise_headers`. The first such error of the day also goes to `alert_key`
+(`system-alerts` by default); if that key is missing too, the log shows
+`could not send the config-error alert`.
 
 ## How it works
 
-TheLounge's plugin API (`onServerStart`) doesn't expose a per-message hook or access to
-connected clients/networks. To receive messages, this plugin patches
-`Network.prototype.createIrcFramework` (the method TheLounge calls once per network
-connection) to attach a `message` listener to the underlying irc-framework client right
-after it's created, before any messages can arrive.
+The Lounge's plugin API (`onServerStart`) has no per-message hook and no access to the
+connected clients and networks. To receive messages, the plugin wraps
+`Network.prototype.createIrcFramework`, which The Lounge calls once per network
+connection, and attaches a `message` listener to the irc-framework client it creates,
+before any message can arrive. It attaches again on every reconnect, and wraps the
+method only once per process. Notices and messages from the server are ignored.
 
-This works reliably today (it's idempotent, logs clearly, and the plugin simply stays
-inactive, rather than crashing TheLounge, if the internal module or method it expects
-can't be found), but it does reach into an internal, undocumented part of TheLounge rather
-than a stable public API. A future TheLounge refactor that moves, renames, or restructures
-`models/network.js` or `createIrcFramework` could silently disable the plugin; check
-TheLounge's startup log for `[apprise-push] network.js not found in module cache — plugin
-inactive` (or a similar message) after upgrading TheLounge if notifications stop working.
-
----
+This depends on an internal, undocumented part of The Lounge. If the module or method is
+missing, the plugin logs an error and stays inactive; The Lounge keeps running. After
+upgrading The Lounge, if notifications stop, look in its startup log for
+`[apprise-push] network.js not found in module cache — plugin inactive` or
+`[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive`.
 
 ## Development
 
 ```bash
-npm install      # install dev tooling (ESLint, Prettier)
-npm test         # run the node:test unit suite
-npm run lint     # ESLint
-npm run format   # Prettier --write
+npm install          # development tools (ESLint, Prettier)
+npm test             # node:test unit tests
+npm run lint         # ESLint
+npm run format       # Prettier --write
+npm run format:check # what CI runs
 ```
 
-The codebase is split into small, individually-tested modules under [`lib/`](lib):
-`config.js` (defaults, glob compilation, validation), `highlight.js`, `rules.js` (rule
-engine), `template.js` (placeholder expansion), `apprise.js` (HTTP delivery),
-`digest.js` (message batching), `mute.js` (mute/snooze state), and `metrics.js` (counters).
-[`index.js`](index.js) wires them into TheLounge.
-
----
+The code is in small modules under [`lib/`](lib), each with its tests in `test/`:
+`config.js` (defaults, glob compilation, validation, the service list), `highlight.js`,
+`rules.js` (pre-filters and rules), `template.js` (placeholders and truncation),
+`apprise.js` (HTTP delivery, retries, fallbacks, alerts), `digest.js` (batching),
+`mute.js` (the mute file) and `metrics.js` (counters). [`index.js`](index.js) connects
+them to The Lounge.
 
 ## Why not an existing tool
 
-- TheLounge's built-in Web Push sends a browser or PWA notification to each subscribed
+- The Lounge's built-in Web Push sends a browser or PWA notification to each subscribed
   device. It has no rules, templates, cooldown or nick blacklist, and can't deliver
   through Apprise (to Telegram and others) with fallback instances.
 - [thelounge-plugin-ntfy](https://github.com/cy1der/thelounge-plugin-ntfy) sends to ntfy,
@@ -650,29 +613,27 @@ engine), `template.js` (placeholder expansion), `apprise.js` (HTTP delivery),
 
 Checked 2026-11-23.
 
----
-
 ## Versioning
 
 Releases follow SemVer: [auto-release](https://github.com/mbologna/auto-release) tags
 `vX.Y.Z` from the Conventional Commit types on `main` (`feat` minor; `fix`, `perf`,
-`revert` patch; a breaking change major) on Monday's scheduled CI run, or a manual run,
-and starts `publish.yml` on the tag, which sets the package version from the tag
-(`npm version`) and publishes it to npm with Trusted Publishing. The tag is the source of
-truth; `version` in `package.json` is kept at the latest release by hand, so a release
-that forgets it still publishes the right version. See the
+`revert` patch; a breaking change major) on Monday's scheduled CI run, or a manual run.
+The tag starts `publish.yml`, which sets the package version from the tag
+(`npm version`) and publishes it to npm with Trusted Publishing. The tag decides the
+version; `version` in `package.json` is brought up to the latest release by hand, so a
+release that forgets it still publishes the right version. See the
 [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
 
----
+## Related projects
 
-## Related
+- [thelounge-patched](https://github.com/mbologna/thelounge-patched): the official The
+  Lounge image with fixes waiting to land upstream, including the service-queries patch
+  that `ignore_services` matches.
+- [thelounge-digest](https://github.com/mbologna/thelounge-digest): a scheduled digest of
+  chosen channels from The Lounge's logs, sent through Apprise.
+- [thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat): a light and
+  dark theme for The Lounge with message grouping and coloured nick avatars.
 
-See also:
-
-- 🎨 **[thelounge-theme-chat](https://github.com/mbologna/thelounge-theme-chat)**: a warm, editorial light/dark theme (automatic light/dark, digest-style messages, pure CSS)
-
----
-
-## License
+## Licence
 
 [MIT](LICENSE) © Michele Bologna
