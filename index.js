@@ -5,7 +5,7 @@ const path = require("path");
 
 const { compileConfig } = require("./lib/config");
 const { stripIrcFormatting, isHighlight } = require("./lib/highlight");
-const { evaluate } = require("./lib/rules");
+const { evaluate, isServiceNick } = require("./lib/rules");
 const { expand, truncate } = require("./lib/template");
 const { sendApprise } = require("./lib/apprise");
 const { createDigestManager } = require("./lib/digest");
@@ -28,7 +28,9 @@ function makeHandler(
   muteState = NOT_MUTED,
   metrics = createMetrics()
 ) {
-  const digestManager = createDigestManager(sendApprise, notifyLog, metrics);
+  const digestManager = createDigestManager(sendApprise, notifyLog, metrics, (now) =>
+    muteState.isMuted(now)
+  );
 
   return function handle({
     client,
@@ -38,6 +40,8 @@ function makeHandler(
     rawMessage,
     isQuery,
     messageType,
+    ignored = false,
+    channelMuted = false,
   }) {
     const cfg = getCfg();
 
@@ -62,11 +66,15 @@ function makeHandler(
       networkName,
       cleanMessage,
       messageType,
-      isHl: isHighlight(cfg, myNick, cleanMessage),
+      // A service's line is never a highlight, wherever it lands (NickServ's
+      // "You are now logged in as <nick>"), matching thelounge-patched.
+      isHl: !isServiceNick(cfg, senderNick) && isHighlight(cfg, myNick, cleanMessage),
       now,
       clientKey,
       attachedCount,
       muted: muteState.isMuted(now),
+      ignored,
+      channelMuted,
     };
 
     const { decision, reason, rule } = evaluate(cfg, ctx, lastNotified, notifyLog);
@@ -102,9 +110,14 @@ function makeHandler(
       message: truncate(cleanMessage, cfg.body_length),
     };
 
-    // Per-rule template overrides fall back to the global templates.
+    // Per-rule template overrides fall back to the global templates. A /me
+    // action has its own body template, so it reads "* nick waves" rather than
+    // repeating the nick in front of it.
     const titleTpl = rule.title ?? (isQuery ? cfg.title_pm : cfg.title_chan);
-    const bodyTpl = rule.body ?? cfg.body;
+    const bodyTpl =
+      messageType === "action"
+        ? (rule.body_action ?? cfg.body_action)
+        : (rule.body ?? cfg.body);
 
     const title = expand(titleTpl, vars);
     const body = expand(bodyTpl, vars);
@@ -159,6 +172,25 @@ function isChannelTarget(irc, target) {
   return /^[#&]/.test(target);
 }
 
+// Batch types that carry history replayed by the server or a bouncer, not new
+// messages: IRCv3 chathistory (ergo replays a private message's history when
+// The Lounge opens its query window) and ZNC's playback. They were notified,
+// or not, when they first arrived.
+const HISTORY_BATCHES = new Set(["chathistory", "draft/chathistory", "znc.in/playback"]);
+
+function isHistoryReplay(event) {
+  return HISTORY_BATCHES.has(event?.batch?.type);
+}
+
+// True when The Lounge has muted the window a message lands in: the channel, or
+// for a private message the query window named after the sender. Muting a
+// network mutes every window in it. A private message with no query window yet
+// opens an unmuted one, so it isn't muted, as in The Lounge.
+function isMutedWindow(network, name) {
+  if (typeof network.getChannel !== "function") return false;
+  return Boolean(network.getChannel(name)?.muted);
+}
+
 const PATCHED = Symbol("apprisePushPatched");
 
 function setupNetworkHook(handle, getCfg) {
@@ -198,6 +230,7 @@ function setupNetworkHook(handle, getCfg) {
     network.irc.on("message", (event) => {
       if (event.from_server) return;
       if (event.type === "notice") return;
+      if (isHistoryReplay(event)) return;
 
       const isQuery = !isChannelTarget(network.irc, event.target);
       handle({
@@ -205,11 +238,15 @@ function setupNetworkHook(handle, getCfg) {
         network,
         target: isQuery ? event.nick : event.target,
         senderNick: event.nick,
-        // Prefix /me actions so they read naturally: "* nick waves"
-        rawMessage:
-          event.type === "action" ? `* ${event.nick} ${event.message}` : event.message,
+        // For a /me action only its text ("waves"): body_action adds "* nick".
+        rawMessage: event.message,
         isQuery,
         messageType: event.type, // "privmsg" or "action"
+        // The Lounge drops messages from users on the network's /ignore list
+        // (Network.isIgnoredUser, The Lounge 4.5+); the plugin skips them too.
+        ignored:
+          typeof network.isIgnoredUser === "function" && network.isIgnoredUser(event),
+        channelMuted: isMutedWindow(network, isQuery ? event.nick : event.target),
       });
     });
 
@@ -218,6 +255,51 @@ function setupNetworkHook(handle, getCfg) {
     }
   };
 
+  return true;
+}
+
+// ── The Lounge's Web Push ──────────────────────────────────────────────────────
+
+// The Lounge pushes highlights to the devices subscribed under Settings →
+// Notifications through WebPush.prototype.push(client, payload, onlyToOffline),
+// called from irc-events/message.js when no browser is attached. A device that
+// also gets the plugin's Apprise notifications would see every highlight twice,
+// so while the plugin delivers (block_web_push on and a valid apprise_url) those
+// calls are dropped. A plugin mute doesn't lift the block: a snooze silences both.
+// pushSingle, which sends the "Push notifications have been enabled" message
+// when a device subscribes, is left alone.
+const WEB_PUSH_PATCHED = Symbol("apprisePushWebPushPatched");
+
+function isWebPushBlocked(cfg) {
+  return Boolean(cfg.block_web_push && cfg.parsedUrl);
+}
+
+function setupWebPushBlock(getCfg) {
+  const modPath = Object.keys(require.cache).find(
+    (k) => k.includes("thelounge") && k.endsWith("/plugins/webpush.js")
+  );
+  const WebPush = modPath && require.cache[modPath].exports?.default;
+  if (!WebPush?.prototype?.push) {
+    console.warn(
+      "[apprise-push] The Lounge's WebPush not found in module cache — its Web Push is not blocked"
+    );
+    return false;
+  }
+  if (WebPush.prototype[WEB_PUSH_PATCHED]) return true;
+  WebPush.prototype[WEB_PUSH_PATCHED] = true;
+
+  const orig = WebPush.prototype.push;
+  let logged = false;
+  WebPush.prototype.push = function (...args) {
+    const cfg = getCfg();
+    if (!isWebPushBlocked(cfg)) return orig.apply(this, args);
+    if (cfg.debug && !logged) {
+      logged = true;
+      console.log(
+        "[apprise-push] dropped The Lounge's Web Push: the plugin delivers notifications (block_web_push)"
+      );
+    }
+  };
   return true;
 }
 
@@ -256,6 +338,11 @@ module.exports.onServerStart = () => {
   const handle = makeHandler(getCfg, lastNotified, notifyLog, muteState, metrics);
 
   if (!setupNetworkHook(handle, getCfg)) return;
+  if (setupWebPushBlock(getCfg) && isWebPushBlocked(cfg)) {
+    console.log(
+      "[apprise-push] The Lounge's Web Push is blocked while the plugin delivers (block_web_push)"
+    );
+  }
 
   // Mute/snooze: watch the directory (not the file itself — fs.watch can't watch
   // a path that doesn't exist yet) for apprise-push.mute being created, edited,
@@ -306,3 +393,6 @@ module.exports.onServerStart = () => {
 module.exports.makeHandler = makeHandler;
 module.exports.setupNetworkHook = setupNetworkHook;
 module.exports.isChannelTarget = isChannelTarget;
+module.exports.isHistoryReplay = isHistoryReplay;
+module.exports.isMutedWindow = isMutedWindow;
+module.exports.setupWebPushBlock = setupWebPushBlock;

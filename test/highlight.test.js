@@ -33,3 +33,23 @@ test("isHighlight tolerates empty myNick", () => {
   const cfg = quietCfg({});
   assert.equal(isHighlight(cfg, "", "anything"), false);
 });
+
+test("isHighlight matches the nick only as a word", () => {
+  const cfg = quietCfg({});
+  assert.equal(isHighlight(cfg, "al", "al: can you look?"), true);
+  assert.equal(isHighlight(cfg, "al", "ping @al"), true);
+  assert.equal(isHighlight(cfg, "al", "hey AL"), true);
+  assert.equal(isHighlight(cfg, "al", "I also think so"), false);
+  assert.equal(isHighlight(cfg, "al", "al2 is someone else"), false);
+});
+
+test("isHighlight matches a nick right after an IRC colour code", () => {
+  const cfg = quietCfg({});
+  assert.equal(isHighlight(cfg, "al", "\x0304al\x03 look"), true);
+});
+
+test("isHighlight escapes regex characters in the nick", () => {
+  const cfg = quietCfg({});
+  assert.equal(isHighlight(cfg, "[al]", "hi [al]"), true);
+  assert.equal(isHighlight(cfg, "a.l", "hi abl"), false);
+});

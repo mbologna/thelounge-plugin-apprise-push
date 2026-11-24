@@ -288,6 +288,10 @@ test("a 404 is not retried, is logged as an error and alerts system-alerts", asy
   assert.equal(alerts.length, 1);
   assert.equal(alerts[0].url, "/notify/system-alerts");
   assert.equal(alerts[0].type, "warning");
+  assert.equal(
+    alerts[0].title,
+    "The Lounge apprise-push: Apprise rejected a notification"
+  );
   assert.match(alerts[0].body, /\/notify\/key: HTTP 404/);
   assert.ok(
     log.error.mock.calls.some((c) =>

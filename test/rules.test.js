@@ -3,7 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { matchRule, evaluate } = require("../lib/rules");
+const { matchRule, evaluate, isServiceNick } = require("../lib/rules");
 const { compileConfig } = require("../lib/config");
 
 const cfg = (raw) => compileConfig(raw, () => {});
@@ -74,6 +74,7 @@ test("evaluate first-match-wins ordering", () => {
   });
   const r = evaluate(c, baseCtx({ isHl: true }), new Map());
   assert.equal(r.decision, "suppress");
+  assert.equal(r.reason, "rule");
 });
 
 test("evaluate returns skip when no rule matches", () => {
@@ -343,4 +344,82 @@ test("per-rule cooldowns are independent across rules", () => {
       .decision,
     "notify"
   );
+});
+
+// ── ignore_services ──────────────────────────────────────────────────────────
+
+const svcCfg = (raw, env = {}) => compileConfig(raw, () => {}, env);
+
+test("evaluate skips PMs from services by default", () => {
+  const c = svcCfg({ rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "NickServ" }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "service");
+});
+
+test("evaluate still notifies for PMs from other nicks", () => {
+  const c = svcCfg({ rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "alice" }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate only filters services in PMs, not in channels", () => {
+  const c = svcCfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ senderNick: "ChanServ" }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate skips the nicks in THELOUNGE_SERVICE_NICKS", () => {
+  const c = svcCfg(
+    { rules: [{ pm: true }] },
+    { THELOUNGE_SERVICE_NICKS: " Q, Satsuki ," }
+  );
+  for (const nick of ["Q", "satsuki"]) {
+    const r = evaluate(c, baseCtx({ isQuery: true, senderNick: nick }), new Map());
+    assert.equal(r.reason, "service", nick);
+  }
+});
+
+test("evaluate matches a nick@server service on its nick", () => {
+  const c = svcCfg({ rules: [{ pm: true }] }, { THELOUNGE_SERVICE_NICKS: "Q" });
+  const r = evaluate(
+    c,
+    baseCtx({ isQuery: true, senderNick: "Q@CServe.quakenet.org" }),
+    new Map()
+  );
+  assert.equal(r.reason, "service");
+});
+
+test("ignore_services: false notifies for service PMs", () => {
+  const c = svcCfg({ ignore_services: false, rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "MemoServ" }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate skips messages from users The Lounge ignores", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ ignored: true, isQuery: true }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "ignored");
+});
+
+test("evaluate skips a channel muted in The Lounge by default", () => {
+  const c = cfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ channelMuted: true }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "muted_channel");
+});
+
+test("ignore_muted: false notifies for a muted channel", () => {
+  const c = cfg({ ignore_muted: false, rules: [{}] });
+  const r = evaluate(c, baseCtx({ channelMuted: true }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("isServiceNick matches services and ignores the @server part", () => {
+  const c = svcCfg({}, { THELOUNGE_SERVICE_NICKS: "Q" });
+  assert.equal(isServiceNick(c, "NickServ"), true);
+  assert.equal(isServiceNick(c, "Q@CServe.quakenet.org"), true);
+  assert.equal(isServiceNick(c, "bob"), false);
+  assert.equal(isServiceNick(svcCfg({ ignore_services: false }), "NickServ"), false);
 });

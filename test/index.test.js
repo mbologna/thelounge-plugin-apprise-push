@@ -4,7 +4,13 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { makeHandler, isChannelTarget } = require("../index");
+const {
+  makeHandler,
+  isHistoryReplay,
+  isChannelTarget,
+  isMutedWindow,
+  setupWebPushBlock,
+} = require("../index");
 const { compileConfig } = require("../lib/config");
 const { createMetrics } = require("../lib/metrics");
 
@@ -107,6 +113,51 @@ test("makeHandler expands template variables in title and body", async () => {
   assert.equal(received.length, 1);
   assert.equal(received[0].title, "[Libera] #dev");
   assert.equal(received[0].body, "bob: hello world");
+});
+
+// Resolves once `received` holds `count` requests, or after two seconds.
+async function waitForRequests(received, count) {
+  const deadline = Date.now() + 2000;
+  while (received.length < count && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+test("makeHandler writes a /me action through body_action, without repeating the nick", async () => {
+  const { closeAll, received, port } = await withServer();
+  const cfg = compileConfig(
+    { apprise_url: `http://127.0.0.1:${port}/notify/key`, rules: [{}] },
+    () => {}
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(
+    makeEvent({ senderNick: "bob", rawMessage: "pokes al", messageType: "action" })
+  );
+  handler(makeEvent({ senderNick: "bob", rawMessage: "hello", target: "#other" }));
+  await waitForRequests(received, 2);
+  closeAll();
+
+  assert.deepEqual(received.map((r) => r.body).sort(), ["* bob pokes al", "bob: hello"]);
+});
+
+test("a rule's body applies to messages and its body_action to actions", async () => {
+  const { closeAll, received, port } = await withServer();
+  const cfg = compileConfig(
+    {
+      apprise_url: `http://127.0.0.1:${port}/notify/key`,
+      rules: [{ body: "said {message}", body_action: "did {message}" }],
+    },
+    () => {}
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ rawMessage: "waves", messageType: "action" }));
+  handler(makeEvent({ rawMessage: "hi", target: "#other" }));
+  await waitForRequests(received, 2);
+  closeAll();
+
+  assert.deepEqual(received.map((r) => r.body).sort(), ["did waves", "said hi"]);
 });
 
 test("makeHandler skips messages from own nick", async () => {
@@ -347,4 +398,158 @@ test("isChannelTarget treats # and & as channels without network info", () => {
   assert.equal(isChannelTarget(undefined, "#dev"), true);
   assert.equal(isChannelTarget({}, "&bitlbee"), true);
   assert.equal(isChannelTarget({}, "root"), false);
+});
+
+test("isHistoryReplay recognises messages replayed in a history batch", () => {
+  const live = { type: "privmsg", nick: "dave", target: "al", message: "hi" };
+  assert.equal(isHistoryReplay(live), false);
+  assert.equal(
+    isHistoryReplay({
+      ...live,
+      batch: { id: "1", type: "chathistory", params: ["dave"] },
+    }),
+    true
+  );
+  assert.equal(isHistoryReplay({ ...live, batch: { type: "znc.in/playback" } }), true);
+  assert.equal(isHistoryReplay({ ...live, batch: { type: "draft/multiline" } }), false);
+});
+
+test("makeHandler skips a message from an ignored user", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig({ apprise_url: url, rules: [{}] }, () => {});
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ isQuery: true, target: "bob", senderNick: "bob", ignored: true }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 0);
+});
+
+test("isMutedWindow reads the window's muted flag from The Lounge's network", () => {
+  const channels = {
+    "#quiet": { muted: true },
+    "#loud": { muted: false },
+    bob: { muted: true },
+  };
+  const network = { getChannel: (name) => channels[name] };
+  assert.equal(isMutedWindow(network, "#quiet"), true);
+  assert.equal(isMutedWindow(network, "#loud"), false);
+  assert.equal(isMutedWindow(network, "bob"), true);
+  assert.equal(isMutedWindow(network, "newcomer"), false);
+  assert.equal(isMutedWindow({}, "#quiet"), false);
+});
+
+test("makeHandler skips a message in a muted channel", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig({ apprise_url: url, rules: [{}] }, () => {});
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ channelMuted: true }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 0);
+});
+
+test("makeHandler never treats a service's channel line as a highlight", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, rules: [{ highlight: true }, { channel: "#bots" }] },
+    () => {},
+    { THELOUNGE_SERVICE_NICKS: "Satsuki" }
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ senderNick: "Satsuki", rawMessage: "mynick: hi" }));
+  handler(
+    makeEvent({ target: "#bots", senderNick: "Satsuki", rawMessage: "mynick: queued" })
+  );
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 1, "only the #bots rule matched");
+  assert.equal(received[0].body, "Satsuki: mynick: queued");
+});
+
+test("makeHandler counts a service's line as a highlight with ignore_services off", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, ignore_services: false, rules: [{ highlight: true }] },
+    () => {},
+    { THELOUNGE_SERVICE_NICKS: "Satsuki" }
+  );
+  const handler = makeHandler(() => cfg, new Map());
+
+  handler(makeEvent({ senderNick: "Satsuki", rawMessage: "mynick: hi" }));
+  await new Promise((r) => setTimeout(r, 50));
+  closeAll();
+
+  assert.equal(received.length, 1);
+});
+
+// A stand-in for The Lounge's dist/server/plugins/webpush.js in require.cache.
+function fakeWebPushModule(t) {
+  const calls = [];
+  class WebPush {
+    push(...args) {
+      calls.push(args);
+    }
+  }
+  const key = "/fake/node_modules/thelounge/dist/server/plugins/webpush.js";
+  require.cache[key] = {
+    id: key,
+    filename: key,
+    loaded: true,
+    exports: { default: WebPush },
+  };
+  t.after(() => delete require.cache[key]);
+  return { WebPush, calls };
+}
+
+test("setupWebPushBlock drops The Lounge's Web Push while the plugin delivers", (t) => {
+  const { WebPush, calls } = fakeWebPushModule(t);
+  let cfg = compileConfig({ apprise_url: "http://apprise:8000/notify/key" }, () => {});
+  assert.equal(
+    setupWebPushBlock(() => cfg),
+    true
+  );
+
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 0, "blocked by default");
+
+  cfg = compileConfig(
+    { apprise_url: "http://apprise:8000/notify/key", block_web_push: false },
+    () => {}
+  );
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 1, "block_web_push: false keeps it");
+
+  cfg = compileConfig({ apprise_url: "ftp://nowhere/notify/key" }, () => {});
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 2, "no valid apprise_url: nothing delivers, so no block");
+});
+
+test("setupWebPushBlock wraps the method only once", (t) => {
+  const { WebPush, calls } = fakeWebPushModule(t);
+  const cfg = compileConfig(
+    { apprise_url: "http://a:8000/notify/k", block_web_push: false },
+    () => {}
+  );
+  setupWebPushBlock(() => cfg);
+  setupWebPushBlock(() => cfg);
+  new WebPush().push({}, {}, true);
+  assert.equal(calls.length, 1);
+});
+
+test("setupWebPushBlock reports when The Lounge's WebPush is missing", (t) => {
+  t.mock.method(console, "warn", () => {});
+  assert.equal(
+    setupWebPushBlock(() => ({})),
+    false
+  );
 });

@@ -6,6 +6,7 @@ const http = require("node:http");
 
 const { makeHandler } = require("../index");
 const { compileConfig } = require("../lib/config");
+const { formatBatch, MAX_DIGEST_LINES } = require("../lib/digest");
 
 // Minimal in-process HTTP server that always responds 200. Returns received bodies.
 function withServer() {
@@ -39,6 +40,15 @@ function makeNetwork(nick = "mynick", name = "Libera") {
   return { irc: { user: { nick } }, nick, name };
 }
 
+// Resolves once `received` holds `count` requests, or after `timeoutMs`: a fixed
+// sleep loses the race to the HTTP round trip when test files run in parallel.
+async function waitForRequests(received, count, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (received.length < count && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 function makeEvent(overrides = {}) {
   return {
     client: makeClient(),
@@ -59,7 +69,7 @@ test("digest_window:0 sends immediately (no batching)", async () => {
   const handler = makeHandler(() => cfg, new Map());
 
   handler(makeEvent());
-  await new Promise((r) => setTimeout(r, 50));
+  await waitForRequests(received, 1);
   closeAll();
 
   assert.equal(received.length, 1);
@@ -85,6 +95,7 @@ test("digest_window batches multiple messages for the same context into one noti
   closeAll();
 
   assert.equal(received.length, 1, "exactly one batched notification");
+  assert.equal(received[0].title, "[Libera] #dev (2 messages)");
   assert.ok(received[0].body.includes("alice"));
   assert.ok(received[0].body.includes("bob"));
 });
@@ -145,8 +156,47 @@ test("per-rule digest_window:0 bypasses digest even when the global default is s
 
   handler(makeEvent({ isQuery: true, target: "alice" }));
 
-  await new Promise((r) => setTimeout(r, 50));
+  await waitForRequests(received, 1);
   closeAll();
 
   assert.equal(received.length, 1, "PM rule's digest_window:0 sends immediately");
+});
+
+test("a digest batch is dropped when muted before its window ends", async () => {
+  const { closeAll, received, port } = await withServer();
+  const url = `http://127.0.0.1:${port}/notify/key`;
+  const cfg = compileConfig(
+    { apprise_url: url, digest_window: 0.05, rules: [{}] },
+    () => {}
+  );
+  let muted = false;
+  const handler = makeHandler(() => cfg, new Map(), [], { isMuted: () => muted });
+
+  handler(makeEvent({ rawMessage: "before the mute" }));
+  muted = true;
+
+  await new Promise((r) => setTimeout(r, 100));
+  closeAll();
+
+  assert.equal(received.length, 0, "nothing is sent while muted");
+});
+
+test("formatBatch leaves a single message as it is", () => {
+  assert.deepEqual(formatBatch("[Libera] #dev", ["alice: hi"]), {
+    title: "[Libera] #dev",
+    body: "alice: hi",
+  });
+});
+
+test("formatBatch caps the lines and says how many were left out", () => {
+  const lines = Array.from({ length: MAX_DIGEST_LINES + 5 }, (_, i) => `u${i}: m${i}`);
+  const { title, body } = formatBatch("[Libera] #dev", lines);
+  assert.equal(title, `[Libera] #dev (${MAX_DIGEST_LINES + 5} messages)`);
+  const out = body.split("\n");
+  assert.equal(out.length, MAX_DIGEST_LINES + 1);
+  assert.equal(
+    out[MAX_DIGEST_LINES - 1],
+    `u${MAX_DIGEST_LINES - 1}: m${MAX_DIGEST_LINES - 1}`
+  );
+  assert.equal(out[MAX_DIGEST_LINES], "… and 5 more");
 });
