@@ -254,6 +254,51 @@ function setupNetworkHook(handle, getCfg) {
   return true;
 }
 
+// ── The Lounge's Web Push ──────────────────────────────────────────────────────
+
+// The Lounge pushes highlights to the devices subscribed under Settings →
+// Notifications through WebPush.prototype.push(client, payload, onlyToOffline),
+// called from irc-events/message.js when no browser is attached. A device that
+// also gets the plugin's Apprise notifications would see every highlight twice,
+// so while the plugin delivers (block_web_push on and a valid apprise_url) those
+// calls are dropped. A plugin mute doesn't lift the block: a snooze silences both.
+// pushSingle, which sends the "Push notifications have been enabled" message
+// when a device subscribes, is left alone.
+const WEB_PUSH_PATCHED = Symbol("apprisePushWebPushPatched");
+
+function isWebPushBlocked(cfg) {
+  return Boolean(cfg.block_web_push && cfg.parsedUrl);
+}
+
+function setupWebPushBlock(getCfg) {
+  const modPath = Object.keys(require.cache).find(
+    (k) => k.includes("thelounge") && k.endsWith("/plugins/webpush.js")
+  );
+  const WebPush = modPath && require.cache[modPath].exports?.default;
+  if (!WebPush?.prototype?.push) {
+    console.warn(
+      "[apprise-push] The Lounge's WebPush not found in module cache — its Web Push is not blocked"
+    );
+    return false;
+  }
+  if (WebPush.prototype[WEB_PUSH_PATCHED]) return true;
+  WebPush.prototype[WEB_PUSH_PATCHED] = true;
+
+  const orig = WebPush.prototype.push;
+  let logged = false;
+  WebPush.prototype.push = function (...args) {
+    const cfg = getCfg();
+    if (!isWebPushBlocked(cfg)) return orig.apply(this, args);
+    if (cfg.debug && !logged) {
+      logged = true;
+      console.log(
+        "[apprise-push] dropped The Lounge's Web Push: the plugin delivers notifications (block_web_push)"
+      );
+    }
+  };
+  return true;
+}
+
 // ── Plugin entry point ─────────────────────────────────────────────────────────
 
 module.exports.onServerStart = () => {
@@ -289,6 +334,11 @@ module.exports.onServerStart = () => {
   const handle = makeHandler(getCfg, lastNotified, notifyLog, muteState, metrics);
 
   if (!setupNetworkHook(handle, getCfg)) return;
+  if (setupWebPushBlock(getCfg) && isWebPushBlocked(cfg)) {
+    console.log(
+      "[apprise-push] The Lounge's Web Push is blocked while the plugin delivers (block_web_push)"
+    );
+  }
 
   // Mute/snooze: watch the directory (not the file itself — fs.watch can't watch
   // a path that doesn't exist yet) for apprise-push.mute being created, edited,
@@ -341,3 +391,4 @@ module.exports.setupNetworkHook = setupNetworkHook;
 module.exports.isChannelTarget = isChannelTarget;
 module.exports.isHistoryReplay = isHistoryReplay;
 module.exports.isMutedWindow = isMutedWindow;
+module.exports.setupWebPushBlock = setupWebPushBlock;

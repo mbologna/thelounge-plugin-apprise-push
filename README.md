@@ -28,6 +28,7 @@ one JSON file, reloaded when it changes. The plugin uses only Node.js built-ins.
 - [Examples](#examples)
 - [Running Apprise API](#running-apprise-api)
 - [Mute and snooze](#mute-and-snooze)
+- [The Lounge's own notifications](#the-lounges-own-notifications)
 - [Metrics](#metrics)
 - [Debugging](#debugging)
 - [Troubleshooting](#troubleshooting)
@@ -482,6 +483,43 @@ file's modification time, so restarting The Lounge doesn't extend it. The log sa
 mute starts, when a snooze ends and when the file is removed. While muted, every message
 is skipped with `→ skip (muted)` in the debug log, before any other filter or rule runs.
 
+## The Lounge's own notifications
+
+The Lounge notifies in two ways of its own, both set up under Settings → Notifications:
+
+- **Browser notifications** ("Enable browser notifications"). An open The Lounge tab
+  shows a desktop notification for a highlight, a private message or an invite (or for
+  every message, with "Enable notification for all messages") when the tab is not
+  focused or the channel is not open. The browser does
+  this; the server can't stop it.
+- **Web Push.** A device subscribed with "Subscribe to push notifications" gets a push
+  from the server for each highlight and private message while that device has no tab
+  open. Invites and "Enable notification for all messages" don't use Web Push.
+
+A phone subscribed to Web Push that also receives the plugin's Apprise notifications
+would get every offline highlight twice, so the plugin blocks Web Push while it
+delivers:
+
+| Key              | Default | Description                                                                                                              |
+| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `block_web_push` | `true`  | Drop The Lounge's Web Push while `apprise_url` is valid. `false` keeps both, for a device that gets only one of the two. |
+
+With the block on, the plugin's rules decide what reaches you; the default rules
+(highlights and private messages) cover what Web Push sent. The block holds while the
+plugin is muted, so a snooze silences both, and lifts when `apprise_url` is removed or
+invalid. The message The Lounge pushes when a device subscribes ("Push notifications have
+been enabled") still arrives, so subscribing still shows that push works. The log says
+`The Lounge's Web Push is blocked while the plugin delivers` at startup; with `debug` it
+also notes the first push it drops.
+
+Browser notifications only appear where a tab is open, so they don't repeat a phone's
+push on the same device. A desktop tab and a phone can both notify for the same
+highlight; `"away_only": true` stops the plugin while any tab is connected.
+
+The plugin follows The Lounge's own rules on what is quiet: it skips users on the
+`/ignore` list, windows muted in The Lounge (`ignore_muted`), and, with
+`ignore_services`, the services that thelounge-patched keeps out of query windows.
+
 ## Metrics
 
 The plugin counts outcomes in memory: `notified`, `suppressed`, `skipped` and
@@ -538,6 +576,12 @@ Lounge's standard output:
    configuration file was missing, failed to parse or had no `apprise_url`.
 4. `→ skip (no_match)` means no rule matched. The default rules notify only on highlights
    and private messages; add a broader rule if needed.
+
+### A phone no longer gets The Lounge's push notifications
+
+`block_web_push` is on by default and drops them while the plugin delivers through
+Apprise. Set `"block_web_push": false` to get both. See
+[The Lounge's own notifications](#the-lounges-own-notifications).
 
 ### A muted channel no longer notifies
 
@@ -596,6 +640,11 @@ missing, the plugin logs an error and stays inactive; The Lounge keeps running. 
 upgrading The Lounge, if notifications stop, look in its startup log for
 `[apprise-push] network.js not found in module cache — plugin inactive` or
 `[apprise-push] Network.prototype.createIrcFramework not found — plugin inactive`.
+
+`block_web_push` wraps The Lounge's `WebPush.prototype.push` the same way, once per
+process. If that module isn't found, the plugin logs
+`The Lounge's WebPush not found in module cache — its Web Push is not blocked` and
+delivers as usual, and both notifications arrive.
 
 ## Development
 

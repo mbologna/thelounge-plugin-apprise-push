@@ -360,3 +360,7 @@ test("compileConfig defaults ignore_muted to true and warns on a non-boolean", (
   assert.equal(c.ignore_muted, true);
   assert.ok(warnings.some((w) => w.includes("ignore_muted")));
 });
+
+test("compileConfig defaults block_web_push to true", () => {
+  assert.equal(compileConfig({}, () => {}, {}).block_web_push, true);
+});

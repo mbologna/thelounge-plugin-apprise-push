@@ -9,6 +9,7 @@ const {
   isHistoryReplay,
   isChannelTarget,
   isMutedWindow,
+  setupWebPushBlock,
 } = require("../index");
 const { compileConfig } = require("../lib/config");
 const { createMetrics } = require("../lib/metrics");
@@ -444,4 +445,66 @@ test("makeHandler counts a service's line as a highlight with ignore_services of
   closeAll();
 
   assert.equal(received.length, 1);
+});
+
+// A stand-in for The Lounge's dist/server/plugins/webpush.js in require.cache.
+function fakeWebPushModule(t) {
+  const calls = [];
+  class WebPush {
+    push(...args) {
+      calls.push(args);
+    }
+  }
+  const key = "/fake/node_modules/thelounge/dist/server/plugins/webpush.js";
+  require.cache[key] = {
+    id: key,
+    filename: key,
+    loaded: true,
+    exports: { default: WebPush },
+  };
+  t.after(() => delete require.cache[key]);
+  return { WebPush, calls };
+}
+
+test("setupWebPushBlock drops The Lounge's Web Push while the plugin delivers", (t) => {
+  const { WebPush, calls } = fakeWebPushModule(t);
+  let cfg = compileConfig({ apprise_url: "http://apprise:8000/notify/key" }, () => {});
+  assert.equal(
+    setupWebPushBlock(() => cfg),
+    true
+  );
+
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 0, "blocked by default");
+
+  cfg = compileConfig(
+    { apprise_url: "http://apprise:8000/notify/key", block_web_push: false },
+    () => {}
+  );
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 1, "block_web_push: false keeps it");
+
+  cfg = compileConfig({ apprise_url: "ftp://nowhere/notify/key" }, () => {});
+  new WebPush().push({}, { title: "#test (1 mention)" }, true);
+  assert.equal(calls.length, 2, "no valid apprise_url: nothing delivers, so no block");
+});
+
+test("setupWebPushBlock wraps the method only once", (t) => {
+  const { WebPush, calls } = fakeWebPushModule(t);
+  const cfg = compileConfig(
+    { apprise_url: "http://a:8000/notify/k", block_web_push: false },
+    () => {}
+  );
+  setupWebPushBlock(() => cfg);
+  setupWebPushBlock(() => cfg);
+  new WebPush().push({}, {}, true);
+  assert.equal(calls.length, 1);
+});
+
+test("setupWebPushBlock reports when The Lounge's WebPush is missing", (t) => {
+  t.mock.method(console, "warn", () => {});
+  assert.equal(
+    setupWebPushBlock(() => ({})),
+    false
+  );
 });

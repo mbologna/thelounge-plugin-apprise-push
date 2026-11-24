@@ -25,6 +25,7 @@
   "highlight_words": [],
   "ignore_services": true,
   "ignore_muted": true,
+  "block_web_push": true,
 
   "priority": null,
   "timezone": "",
