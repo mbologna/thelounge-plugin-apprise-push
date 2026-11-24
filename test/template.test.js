@@ -34,3 +34,13 @@ test("truncate cuts long strings and appends ellipsis", () => {
 test("truncate with 0 maxLen disables truncation", () => {
   assert.equal(truncate("hello world", 0), "hello world");
 });
+
+test("truncate never splits an emoji", () => {
+  const out = truncate("ok 🎉🎉🎉 done", 5);
+  assert.equal(out, "ok 🎉…");
+  assert.doesNotMatch(out, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+});
+
+test("truncate counts an emoji as one character", () => {
+  assert.equal(truncate("🎉🎉", 2), "🎉🎉");
+});
