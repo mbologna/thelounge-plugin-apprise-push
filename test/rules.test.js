@@ -344,3 +344,53 @@ test("per-rule cooldowns are independent across rules", () => {
     "notify"
   );
 });
+
+// ── ignore_services ──────────────────────────────────────────────────────────
+
+const svcCfg = (raw, env = {}) => compileConfig(raw, () => {}, env);
+
+test("evaluate skips PMs from services by default", () => {
+  const c = svcCfg({ rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "NickServ" }), new Map());
+  assert.equal(r.decision, "skip");
+  assert.equal(r.reason, "service");
+});
+
+test("evaluate still notifies for PMs from other nicks", () => {
+  const c = svcCfg({ rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "alice" }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate only filters services in PMs, not in channels", () => {
+  const c = svcCfg({ rules: [{}] });
+  const r = evaluate(c, baseCtx({ senderNick: "ChanServ" }), new Map());
+  assert.equal(r.decision, "notify");
+});
+
+test("evaluate skips the nicks in THELOUNGE_SERVICE_NICKS", () => {
+  const c = svcCfg(
+    { rules: [{ pm: true }] },
+    { THELOUNGE_SERVICE_NICKS: " Q, Satsuki ," }
+  );
+  for (const nick of ["Q", "satsuki"]) {
+    const r = evaluate(c, baseCtx({ isQuery: true, senderNick: nick }), new Map());
+    assert.equal(r.reason, "service", nick);
+  }
+});
+
+test("evaluate matches a nick@server service on its nick", () => {
+  const c = svcCfg({ rules: [{ pm: true }] }, { THELOUNGE_SERVICE_NICKS: "Q" });
+  const r = evaluate(
+    c,
+    baseCtx({ isQuery: true, senderNick: "Q@CServe.quakenet.org" }),
+    new Map()
+  );
+  assert.equal(r.reason, "service");
+});
+
+test("ignore_services: false notifies for service PMs", () => {
+  const c = svcCfg({ ignore_services: false, rules: [{ pm: true }] });
+  const r = evaluate(c, baseCtx({ isQuery: true, senderNick: "MemoServ" }), new Map());
+  assert.equal(r.decision, "notify");
+});

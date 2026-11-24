@@ -23,6 +23,7 @@
   "nick_blacklist": ["*bot*", "ChanServ", "NickServ"],
   "network_blacklist": [],
   "highlight_words": [],
+  "ignore_services": true,
 
   "priority": null,
   "timezone": "",

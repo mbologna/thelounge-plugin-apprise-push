@@ -3,7 +3,13 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { compileConfig, makeGlobRe, matchesAny, DEFAULTS } = require("../lib/config");
+const {
+  compileConfig,
+  makeGlobRe,
+  matchesAny,
+  DEFAULTS,
+  SERVICE_NICKS,
+} = require("../lib/config");
 
 const quiet = () => {};
 const cfg = (raw) => compileConfig(raw, quiet);
@@ -320,4 +326,29 @@ test("a non-string alert_key warns and falls back to the default", () => {
   );
   assert.equal(c.alert_key, "system-alerts");
   assert.ok(warnings.some((w) => w.includes('"alert_key" should be a string')));
+});
+
+test("compileConfig enables ignore_services by default with the built-in services", () => {
+  const c = compileConfig({}, () => {}, {});
+  assert.equal(c.ignore_services, true);
+  assert.deepEqual([...c.serviceNicks].sort(), [...SERVICE_NICKS].sort());
+});
+
+test("compileConfig adds THELOUNGE_SERVICE_NICKS to the service list", () => {
+  const c = compileConfig({}, () => {}, { THELOUNGE_SERVICE_NICKS: "Q,X" });
+  assert.ok(c.serviceNicks.has("q"));
+  assert.ok(c.serviceNicks.has("x"));
+  assert.ok(c.serviceNicks.has("nickserv"));
+});
+
+test("compileConfig empties the service list when ignore_services is false", () => {
+  const c = compileConfig({ ignore_services: false }, () => {}, {});
+  assert.equal(c.serviceNicks.size, 0);
+});
+
+test("compileConfig warns on a non-boolean ignore_services and keeps the default", () => {
+  const warnings = [];
+  const c = compileConfig({ ignore_services: "no" }, (m) => warnings.push(m), {});
+  assert.equal(c.ignore_services, true);
+  assert.ok(warnings.some((w) => w.includes("ignore_services")));
 });
