@@ -74,6 +74,7 @@ test("evaluate first-match-wins ordering", () => {
   });
   const r = evaluate(c, baseCtx({ isHl: true }), new Map());
   assert.equal(r.decision, "suppress");
+  assert.equal(r.reason, "rule");
 });
 
 test("evaluate returns skip when no rule matches", () => {
